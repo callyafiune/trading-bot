@@ -23,6 +23,13 @@ class Signal:
     reason: str
 
 
+@dataclass
+class SignalDecision:
+    signal: Signal | None
+    blocked_reason: str | None
+    raw_signal: Signal | None
+
+
 class BreakoutATRStrategy:
     def __init__(self, settings: StrategyBreakoutSettings) -> None:
         self.settings = settings
@@ -134,41 +141,101 @@ class BreakoutATRStrategy:
                 best_t = float(t)
         return best_t
 
+    def evaluate_signal(self, df: pd.DataFrame, i: int) -> SignalDecision:
+        row = df.iloc[i]
+        raw_signal, raw_reason = self._raw_signal_by_mode(df, i)
+
+        if row.get("regime") != "TREND":
+            if raw_reason == "warmup":
+                return SignalDecision(signal=None, blocked_reason="warmup", raw_signal=None)
+            return SignalDecision(signal=None, blocked_reason="regime", raw_signal=raw_signal)
+
+        if raw_signal is None:
+            return SignalDecision(signal=None, blocked_reason=raw_reason, raw_signal=None)
+
+        mode_block = self._mode_filter_reason(df, i, raw_signal)
+        if mode_block:
+            return SignalDecision(signal=None, blocked_reason=mode_block, raw_signal=raw_signal)
+
+        ma_block = self._ma200_filter_reason(row, raw_signal)
+        if ma_block:
+            return SignalDecision(signal=None, blocked_reason=ma_block, raw_signal=raw_signal)
+
+        return SignalDecision(signal=raw_signal, blocked_reason=None, raw_signal=raw_signal)
+
     def signal_decision(self, df: pd.DataFrame, i: int) -> tuple[Signal | None, str | None]:
-        if i < self.settings.breakout_lookback_N + 1:
+        decision = self.evaluate_signal(df, i)
+        return decision.signal, decision.blocked_reason
+
+    def _raw_signal_by_mode(self, df: pd.DataFrame, i: int) -> tuple[Signal | None, str | None]:
+        if self.settings.mode == "breakout":
+            if i < self.settings.breakout_lookback_N + 1:
+                return None, "warmup"
+            return self._breakout_signal(df, i)
+
+        if i < 1:
             return None, "warmup"
 
-        row = df.iloc[i]
-        if row.get("regime") != "TREND":
-            return None, "regime"
-
-        if self.settings.mode == "breakout":
-            return self._breakout_signal(df, i)
         if self.settings.mode == "ema":
             return self._ema_signal(df, i)
-        if self.settings.mode == "ema_macd":
-            return self._ema_macd_signal(df, i)
-        if self.settings.mode == "ml_gate":
-            sig, reason = self._ema_macd_signal(df, i)
-            if sig is None:
-                return None, reason
-            prob = float(row.get("ml_prob", np.nan))
-            threshold = float(row.get("ml_threshold", self.settings.ml_prob_threshold))
-            if np.isnan(prob):
-                return None, "ml_warmup"
-            if sig.side == "LONG" and prob < threshold:
-                return None, "ml_gate"
-            if sig.side == "SHORT" and prob > (1.0 - threshold):
-                return None, "ml_gate"
-            return sig, None
-
+        if self.settings.mode in ("ema_macd", "ml_gate"):
+            return self._ema_signal(df, i)
         return None, "unsupported_mode"
+
+    def _mode_filter_reason(self, df: pd.DataFrame, i: int, signal: Signal) -> str | None:
+        row = df.iloc[i]
+        if self.settings.mode == "breakout":
+            if self.settings.use_rel_volume_filter and row.get("rel_volume_24", 0.0) < self.settings.min_rel_volume:
+                return "rel_volume"
+            return None
+
+        if self.settings.mode == "ema":
+            return None
+
+        if self.settings.mode in ("ema_macd", "ml_gate"):
+            if self.settings.use_rel_volume_filter and row.get("rel_volume_24", 0.0) <= self.settings.min_rel_volume:
+                return "rel_volume"
+
+            macd_line = row.get("macd_line", np.nan)
+            macd_signal = row.get("macd_signal", np.nan)
+            if pd.isna(macd_line) or pd.isna(macd_signal):
+                return "warmup"
+
+            if signal.side == "LONG" and macd_line <= macd_signal:
+                return "macd_gate"
+            if signal.side == "SHORT" and macd_line >= macd_signal:
+                return "macd_gate"
+
+            if self.settings.mode == "ml_gate":
+                prob = float(row.get("ml_prob", np.nan))
+                threshold = float(row.get("ml_threshold", self.settings.ml_prob_threshold))
+                if np.isnan(prob):
+                    return "ml_warmup"
+                if signal.side == "LONG" and prob < threshold:
+                    return "ml_gate"
+                if signal.side == "SHORT" and prob > (1.0 - threshold):
+                    return "ml_gate"
+
+        return None
+
+    def _ma200_filter_reason(self, row: pd.Series, signal: Signal) -> str | None:
+        if not self.settings.use_ma200_filter:
+            return None
+
+        ma_col = f"ma_{self.settings.ma200_period}"
+        ma_value = row.get(ma_col, np.nan)
+        close = row.get("close", np.nan)
+        if pd.isna(ma_value) or pd.isna(close):
+            return "ma200"
+
+        if signal.side == "LONG" and close <= ma_value:
+            return "ma200"
+        if signal.side == "SHORT" and close >= ma_value:
+            return "ma200"
+        return None
 
     def _breakout_signal(self, df: pd.DataFrame, i: int) -> tuple[Signal | None, str | None]:
         row = df.iloc[i]
-        if self.settings.use_rel_volume_filter and row.get("rel_volume_24", 0.0) < self.settings.min_rel_volume:
-            return None, "rel_volume"
-
         lookback = df.iloc[i - self.settings.breakout_lookback_N : i]
         prev_high = lookback["high"].max()
         prev_low = lookback["low"].min()
@@ -196,24 +263,7 @@ class BreakoutATRStrategy:
         return None, "no_crossover"
 
     def _ema_macd_signal(self, df: pd.DataFrame, i: int) -> tuple[Signal | None, str | None]:
-        row = df.iloc[i]
-        sig, reason = self._ema_signal(df, i)
-        if sig is None:
-            return None, reason
-
-        if self.settings.use_rel_volume_filter and row.get("rel_volume_24", 0.0) <= self.settings.min_rel_volume:
-            return None, "rel_volume"
-
-        macd_line = row.get("macd_line", np.nan)
-        macd_signal = row.get("macd_signal", np.nan)
-        if pd.isna(macd_line) or pd.isna(macd_signal):
-            return None, "warmup"
-
-        if sig.side == "LONG" and macd_line <= macd_signal:
-            return None, "macd_gate"
-        if sig.side == "SHORT" and macd_line >= macd_signal:
-            return None, "macd_gate"
-        return sig, None
+        return self._ema_signal(df, i)
 
     def signal_at(self, df: pd.DataFrame, i: int) -> Signal | None:
         signal, _ = self.signal_decision(df, i)

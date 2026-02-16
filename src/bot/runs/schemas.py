@@ -10,6 +10,7 @@ class SummaryCounts(BaseModel):
     blocked_risk: int = 0
     blocked_killswitch: int = 0
     blocked_mode: int = 0
+    blocked_ma200: int = 0
     killswitch_events: int = 0
 
 
