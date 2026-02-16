@@ -50,6 +50,7 @@ class BacktestEngine:
             "killswitch_events": 0,
             "first_killswitch_at": None,
             "signals_blocked_mode": 0,
+            "signals_blocked_ma200": 0,
         }
 
         day_anchor: pd.Timestamp | None = None
@@ -158,14 +159,20 @@ class BacktestEngine:
                     diagnostics["first_killswitch_at"] = str(ts)
 
             if position is None:
-                sig, blocked_reason = self.strategy.signal_decision(df, i)
+                decision = self.strategy.evaluate_signal(df, i)
+                sig = decision.signal
+                blocked_reason = decision.blocked_reason
+                if decision.raw_signal is not None:
+                    diagnostics["signals_total"] += 1
+
                 if blocked_reason == "regime":
                     diagnostics["signals_blocked_regime"] += 1
-                elif blocked_reason not in (None, "warmup", "no_breakout", "no_crossover"):
+                elif blocked_reason == "ma200":
+                    diagnostics["signals_blocked_ma200"] += 1
+                elif blocked_reason in ("macd_gate", "ml_gate", "unsupported_mode"):
                     diagnostics["signals_blocked_mode"] += 1
 
                 if sig:
-                    diagnostics["signals_total"] += 1
                     if kill_day or kill_week:
                         diagnostics["signals_blocked_killswitch"] += 1
                     else:

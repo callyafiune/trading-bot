@@ -18,3 +18,21 @@ def test_log_return_1_no_future_leak():
     feat = build_features(df)
     expected = (feat["close"].iloc[10] / feat["close"].iloc[9]).__float__()
     assert abs(feat["log_return_1"].iloc[10] - np.log(expected)) < 1e-9
+
+
+def test_no_lookahead_ma200():
+    n = 260
+    close = pd.Series([100 + i for i in range(n)], dtype=float)
+    df = pd.DataFrame(
+        {
+            "open_time": pd.date_range("2024-01-01", periods=n, freq="h", tz="UTC"),
+            "open": close,
+            "high": close + 1,
+            "low": close - 1,
+            "close": close,
+            "volume": [10] * n,
+        }
+    )
+    feat = build_features(df)
+    expected = close.rolling(200, min_periods=200).mean()
+    pd.testing.assert_series_equal(feat["ma_200"], expected, check_names=False)
