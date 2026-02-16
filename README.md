@@ -22,6 +22,18 @@ cp .env.example .env
 ## Configuração
 Edite `config/settings.yaml` para ajustar símbolo, datas, risco, fricções e execução.
 
+Novos defaults estruturais para o baseline breakout+ATR:
+- `strategy_breakout.breakout_lookback_N: 72`
+- `strategy_breakout.atr_k: 2.5`
+- `regime.adx_trend_threshold: 28`
+- `strategy_breakout.use_ma200_filter: true`
+- `strategy_breakout.ma200_period: 200`
+
+Filtro direcional MA200 (sem lookahead):
+- LONG só entra quando `close[t] > ma_200[t]`
+- SHORT só entra quando `close[t] < ma_200[t]`
+- A decisão é feita no candle fechado `t`; execução permanece no `open[t+1]`.
+
 ## Baixar dados
 ```bash
 python -m bot fetch-data --start 2023-01-01 --end 2026-02-16
@@ -47,13 +59,20 @@ python -m bot backtest \
 Exemplos de modos estratégicos:
 ```bash
 python -m bot backtest --data-path ... --mode ema
-python -m bot backtest --data-path ... --mode ema_macd --atr-k 2.5
-python -m bot backtest --data-path ... --mode ml_gate --ml-threshold 0.58
+python -m bot backtest --data-path ... --mode ema_macd --atr-k 2.5 --adx-threshold 28
+python -m bot backtest --data-path ... --mode ml_gate --ml-threshold 0.58 --use-ma200-filter
 ```
 
 Para validar sem executar:
 ```bash
 python -m bot backtest --data-path ... --dry-run
+```
+
+Comparação rápida before/after (smoke 2025-01-01 a 2025-04-01):
+```bash
+python -m bot backtest --data-path data/processed/BTCUSDT_1h_2025-01-01_2025-04-01.parquet --config config/settings.yaml --run-name baseline_after
+python -m bot backtest --data-path data/processed/BTCUSDT_1h_2025-01-01_2025-04-01.parquet --config config/settings.yaml --run-name baseline_before --breakout-N 48 --adx-threshold 25 --no-use-ma200-filter
+python -m bot compare --runs runs/<baseline_before> runs/<baseline_after>
 ```
 
 Cada execução cria uma pasta única em `runs/` contendo:
@@ -70,6 +89,7 @@ Cada execução cria uma pasta única em `runs/` contendo:
 ## Comparar runs
 ```bash
 python -m bot compare --runs runs/<id1> runs/<id2>
+# também funciona: python -m bot compare --runs runs/<id1> --runs runs/<id2>
 ```
 
 Opcionalmente, salve a comparação:
