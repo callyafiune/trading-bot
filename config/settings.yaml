@@ -1,0 +1,38 @@
+symbol: BTCUSDT
+interval: 1h
+start_date: "2023-01-01"
+end_date: "2026-02-16"
+regime:
+  vol_window_short: 24
+  vol_window_long: 168
+  chaos_vol_percentile: 0.90
+  adx_period: 14
+  adx_trend_threshold: 22
+  bb_period: 20
+  bb_width_range_threshold: 0.06
+strategy_breakout:
+  breakout_lookback_N: 20
+  atr_period: 14
+  atr_k: 2.0
+  min_rel_volume: 1.1
+  use_rel_volume_filter: true
+  time_stop_hours: 48
+risk:
+  account_equity_usdt: 10000
+  risk_per_trade: 0.005
+  max_leverage: 2.0
+  max_open_positions: 1
+  daily_loss_limit_pct: 0.02
+  weekly_loss_limit_pct: 0.05
+  liquidation_buffer_pct: 0.35
+frictions:
+  fee_rate_per_side: 0.001
+  slippage_rate_per_side: 0.0003
+  borrow_interest_rate_per_hour: 0.00002
+execution:
+  margin_mode: "isolated"
+  order_type: "MARKET"
+  use_testnet: true
+  api_key_env: BINANCE_API_KEY
+  api_secret_env: BINANCE_API_SECRET
+  dry_run: true
