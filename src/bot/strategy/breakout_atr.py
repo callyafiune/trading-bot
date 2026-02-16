@@ -21,15 +21,15 @@ class BreakoutATRStrategy:
     def __init__(self, settings: StrategyBreakoutSettings) -> None:
         self.settings = settings
 
-    def signal_at(self, df: pd.DataFrame, i: int) -> Signal | None:
+    def signal_decision(self, df: pd.DataFrame, i: int) -> tuple[Signal | None, str | None]:
         if i < self.settings.breakout_lookback_N + 1:
-            return None
+            return None, "warmup"
         row = df.iloc[i]
         if row.get("regime") != "TREND":
-            return None
+            return None, "regime"
 
         if self.settings.use_rel_volume_filter and row.get("rel_volume_24", 0.0) < self.settings.min_rel_volume:
-            return None
+            return None, "rel_volume"
 
         lookback = df.iloc[i - self.settings.breakout_lookback_N : i]
         prev_high = lookback["high"].max()
@@ -37,10 +37,14 @@ class BreakoutATRStrategy:
         close = row["close"]
 
         if close > prev_high:
-            return Signal(side="LONG", reason="breakout_high")
+            return Signal(side="LONG", reason="breakout_high"), None
         if close < prev_low:
-            return Signal(side="SHORT", reason="breakout_low")
-        return None
+            return Signal(side="SHORT", reason="breakout_low"), None
+        return None, "no_breakout"
+
+    def signal_at(self, df: pd.DataFrame, i: int) -> Signal | None:
+        signal, _ = self.signal_decision(df, i)
+        return signal
 
     def initial_stop(self, side: Side, entry_price: float, atr: float) -> float:
         k = self.settings.atr_k

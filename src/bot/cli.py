@@ -54,8 +54,21 @@ def backtest(data_path: str = typer.Option(...), config_path: str = "config/sett
     trend_pct = (trend_candles / len(df)) * 100 if len(df) else 0.0
     print(f"[cyan]Regime:[/cyan] TREND={trend_candles} ({trend_pct:.2f}%)")
 
-    trades, equity = BacktestEngine(cfg).run(df)
+    engine = BacktestEngine(cfg)
+    trades, equity = engine.run(df)
     print(f"[cyan]Backtest:[/cyan] total_trades={len(trades)}")
+    if engine.last_run_diagnostics:
+        diag = engine.last_run_diagnostics
+        print(
+            "[cyan]Diagnostics:[/cyan]"
+            f" signals_total={diag.get('signals_total', 0)}"
+            f" | blocked_regime={diag.get('signals_blocked_regime', 0)}"
+            f" | blocked_risk={diag.get('signals_blocked_risk', 0)}"
+            f" | blocked_killswitch={diag.get('signals_blocked_killswitch', 0)}"
+            f" | entries_executed={diag.get('entries_executed', 0)}"
+            f" | killswitch_events={diag.get('killswitch_events', 0)}"
+            f" | first_killswitch_at={diag.get('first_killswitch_at')}"
+        )
 
     save_trades_csv(trades)
     metrics = compute_metrics(trades, equity)
