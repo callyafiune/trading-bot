@@ -12,18 +12,32 @@ class RegimeSettings(BaseModel):
     vol_window_long: int = 168
     chaos_vol_percentile: float = 0.9
     adx_period: int = 14
-    adx_trend_threshold: float = 22
+    adx_trend_threshold: float = 25
     bb_period: int = 20
     bb_width_range_threshold: float = 0.06
 
 
 class StrategyBreakoutSettings(BaseModel):
+    mode: Literal["breakout", "ema", "ema_macd", "ml_gate"] = "breakout"
     breakout_lookback_N: int = 20
+    ema_fast_period: int = 12
+    ema_slow_period: int = 26
+    macd_fast: int = 12
+    macd_slow: int = 26
+    macd_signal: int = 9
+    rsi_period: int = 14
     atr_period: int = 14
-    atr_k: float = 2.0
-    min_rel_volume: float = 1.1
+    atr_k: float = 2.5
+    min_rel_volume: float = 1.0
     use_rel_volume_filter: bool = True
     time_stop_hours: int = 48
+    use_walk_forward: bool = True
+    wf_train_bars: int = 24 * 60
+    wf_val_bars: int = 24 * 30
+    wf_test_bars: int = 24 * 30
+    ml_prob_threshold: float = 0.55
+    ml_feature_selector: Literal["lightgbm", "xgboost"] = "lightgbm"
+    ml_feature_top_k: int = 8
 
 
 class RiskSettings(BaseModel):

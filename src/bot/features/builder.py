@@ -35,6 +35,20 @@ def _adx(df: pd.DataFrame, period: int = 14) -> pd.Series:
     return dx.rolling(period, min_periods=period).mean()
 
 
+def _ema(series: pd.Series, period: int) -> pd.Series:
+    return series.ewm(span=period, adjust=False, min_periods=period).mean()
+
+
+def _rsi(close: pd.Series, period: int = 14) -> pd.Series:
+    delta = close.diff()
+    gain = delta.clip(lower=0)
+    loss = -delta.clip(upper=0)
+    avg_gain = gain.rolling(period, min_periods=period).mean()
+    avg_loss = loss.rolling(period, min_periods=period).mean()
+    rs = avg_gain / avg_loss.replace(0, np.nan)
+    return 100 - (100 / (1 + rs))
+
+
 def build_features(df: pd.DataFrame) -> pd.DataFrame:
     out = df.copy()
     log_price = np.log(out["close"])
@@ -47,6 +61,12 @@ def build_features(df: pd.DataFrame) -> pd.DataFrame:
 
     out["atr_14"] = _atr(out, 14)
     out["atr_pct"] = out["atr_14"] / out["close"]
+
+    out["ema_12"] = _ema(out["close"], 12)
+    out["ema_26"] = _ema(out["close"], 26)
+    out["macd_line"] = out["ema_12"] - out["ema_26"]
+    out["macd_signal"] = _ema(out["macd_line"], 9)
+    out["rsi_14"] = _rsi(out["close"], 14)
 
     for n in [20, 50, 200]:
         out[f"ma_{n}"] = out["close"].rolling(n, min_periods=n).mean()

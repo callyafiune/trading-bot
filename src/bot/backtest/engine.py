@@ -33,6 +33,7 @@ class BacktestEngine:
         self.last_run_diagnostics: dict[str, int | float | str | None] = {}
 
     def run(self, df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
+        df = self.strategy.prepare(df)
         equity = self.settings.risk.account_equity_usdt
         eq_curve = []
         trades: list[dict] = []
@@ -48,6 +49,7 @@ class BacktestEngine:
             "entries_executed": 0,
             "killswitch_events": 0,
             "first_killswitch_at": None,
+            "signals_blocked_mode": 0,
         }
 
         day_anchor: pd.Timestamp | None = None
@@ -159,6 +161,8 @@ class BacktestEngine:
                 sig, blocked_reason = self.strategy.signal_decision(df, i)
                 if blocked_reason == "regime":
                     diagnostics["signals_blocked_regime"] += 1
+                elif blocked_reason not in (None, "warmup", "no_breakout", "no_crossover"):
+                    diagnostics["signals_blocked_mode"] += 1
 
                 if sig:
                     diagnostics["signals_total"] += 1
