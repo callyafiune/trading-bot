@@ -18,7 +18,10 @@ class Position:
     stop: float
     entry_time: pd.Timestamp
     entry_fee: float
+    entry_slippage: float
     notional: float
+    stop_init: float
+    regime_at_entry: str
 
 
 class BacktestEngine:
@@ -29,7 +32,7 @@ class BacktestEngine:
         self.broker = BrokerSim(settings.frictions.fee_rate_per_side, settings.frictions.slippage_rate_per_side)
         self.last_run_diagnostics: dict[str, int | float | str | None] = {}
 
-    def run(self, df: pd.DataFrame) -> tuple[pd.DataFrame, pd.Series]:
+    def run(self, df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
         equity = self.settings.risk.account_equity_usdt
         eq_curve = []
         trades: list[dict] = []
@@ -53,6 +56,7 @@ class BacktestEngine:
         equity_week_start = equity
         kill_day = False
         kill_week = False
+        trade_id_seq = 1
 
         for i in range(1, len(df) - 1):
             row = df.iloc[i]
@@ -78,7 +82,18 @@ class BacktestEngine:
                 size = self.risk.size_position(equity, entry_open, stop, intent.side)
                 if size.valid and size.qty > 0:
                     fill = self.broker.execute_entry(intent.side, entry_open, size.qty)
-                    position = Position(intent.side, fill.qty, fill.price, stop, next_row["open_time"], fill.fee, size.notional)
+                    position = Position(
+                        intent.side,
+                        fill.qty,
+                        fill.price,
+                        stop,
+                        next_row["open_time"],
+                        fill.fee,
+                        fill.slippage,
+                        size.notional,
+                        stop,
+                        str(row.get("regime", "")),
+                    )
                     equity -= fill.fee
                     diagnostics["entries_executed"] += 1
                 else:
@@ -95,22 +110,33 @@ class BacktestEngine:
                     exit_fill = self.broker.execute_exit(position.side, exit_ref, position.qty)
                     pnl = (exit_fill.price - position.entry_price) * position.qty if position.side == "LONG" else (position.entry_price - exit_fill.price) * position.qty
                     borrow_cost = position.notional * self.settings.frictions.borrow_interest_rate_per_hour * max(hours_in_pos, 1)
-                    pnl_net = pnl - position.entry_fee - exit_fill.fee - borrow_cost
+                    fees_total = position.entry_fee + exit_fill.fee
+                    slippage_total = position.entry_slippage + exit_fill.slippage
+                    pnl_net = pnl - fees_total - borrow_cost
                     equity += pnl_net
                     trades.append(
                         {
+                            "trade_id": trade_id_seq,
                             "entry_time": position.entry_time,
                             "exit_time": row["open_time"],
-                            "side": position.side,
-                            "entry": position.entry_price,
-                            "exit": exit_fill.price,
+                            "direction": position.side,
+                            "entry_price": position.entry_price,
+                            "exit_price": exit_fill.price,
                             "qty": position.qty,
                             "notional": position.notional,
+                            "stop_init": position.stop_init,
+                            "stop_final": position.stop,
+                            "reason_exit": "STOP" if stop_hit else "TIME",
+                            "pnl_gross": pnl,
                             "pnl_net": pnl_net,
-                            "hours_in_pos": hours_in_pos,
-                            "exit_reason": "stop" if stop_hit else "time_stop",
+                            "fees": fees_total,
+                            "slippage": slippage_total,
+                            "interest": borrow_cost,
+                            "regime_at_entry": position.regime_at_entry,
+                            "hold_hours": hours_in_pos,
                         }
                     )
+                    trade_id_seq += 1
                     position = None
                 else:
                     position.stop = self.strategy.trailing_stop(position.side, position.stop, float(row["close"]), float(row["atr_14"]))
@@ -142,7 +168,22 @@ class BacktestEngine:
                         intent = sig
                         intent_idx = i
 
-            eq_curve.append(equity)
+            current_position = "FLAT" if position is None else position.side
+            close_price = float(row["close"])
+            eq_curve.append(
+                {
+                    "timestamp": row["open_time"],
+                    "equity": equity,
+                    "position": current_position,
+                    "price": close_price,
+                }
+            )
 
         self.last_run_diagnostics = diagnostics
-        return pd.DataFrame(trades), pd.Series(eq_curve, name="equity")
+        equity_df = pd.DataFrame(eq_curve)
+        if not equity_df.empty:
+            running_peak = equity_df["equity"].cummax()
+            equity_df["drawdown"] = equity_df["equity"] / running_peak - 1.0
+        else:
+            equity_df["drawdown"] = pd.Series(dtype=float)
+        return pd.DataFrame(trades), equity_df
