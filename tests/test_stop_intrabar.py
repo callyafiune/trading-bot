@@ -8,7 +8,7 @@ def test_stop_intrabar_priority():
     cfg = load_settings()
     df = pd.DataFrame(
         {
-            "open_time": pd.date_range("2024-01-01", periods=5, freq="H", tz="UTC"),
+            "open_time": pd.date_range("2024-01-01", periods=5, freq="h", tz="UTC"),
             "open": [100, 101, 102, 103, 104],
             "high": [101, 102, 150, 104, 105],
             "low": [99, 100, 50, 102, 103],

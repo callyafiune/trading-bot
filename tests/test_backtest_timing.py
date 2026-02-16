@@ -11,7 +11,7 @@ def _sample_df():
     close = [100 + i * 0.5 for i in range(n)]
     return pd.DataFrame(
         {
-            "open_time": pd.date_range("2024-01-01", periods=n, freq="H", tz="UTC"),
+            "open_time": pd.date_range("2024-01-01", periods=n, freq="h", tz="UTC"),
             "open": close,
             "high": [c + 1 for c in close],
             "low": [c - 1 for c in close],
