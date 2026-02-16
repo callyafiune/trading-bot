@@ -7,7 +7,7 @@ from bot.features.builder import build_features
 def test_log_return_1_no_future_leak():
     df = pd.DataFrame(
         {
-            "open_time": pd.date_range("2024-01-01", periods=30, freq="H", tz="UTC"),
+            "open_time": pd.date_range("2024-01-01", periods=30, freq="h", tz="UTC"),
             "open": range(30),
             "high": [x + 1 for x in range(30)],
             "low": [max(x - 1, 0) for x in range(30)],

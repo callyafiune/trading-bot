@@ -37,9 +37,26 @@ def fetch_data(start: str = typer.Option(None), end: str = typer.Option(None), c
 def backtest(data_path: str = typer.Option(...), config_path: str = "config/settings.yaml"):
     cfg = load_settings(config_path)
     df = load_parquet(data_path)
+    if df.empty:
+        print("[red]Dataset vazio. Verifique o arquivo de entrada.[/red]")
+        raise typer.Exit(code=1)
+
+    print(
+        "[cyan]Dataset:[/cyan]"
+        f" candles={len(df)}"
+        f" | inicio={df['open_time'].min()}"
+        f" | fim={df['open_time'].max()}"
+    )
+
     df = build_features(df)
     df["regime"] = RegimeDetector(cfg.regime).apply(df)
+    trend_candles = int((df["regime"] == "TREND").sum())
+    trend_pct = (trend_candles / len(df)) * 100 if len(df) else 0.0
+    print(f"[cyan]Regime:[/cyan] TREND={trend_candles} ({trend_pct:.2f}%)")
+
     trades, equity = BacktestEngine(cfg).run(df)
+    print(f"[cyan]Backtest:[/cyan] total_trades={len(trades)}")
+
     save_trades_csv(trades)
     metrics = compute_metrics(trades, equity)
     print_summary(metrics)
