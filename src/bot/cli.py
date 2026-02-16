@@ -81,6 +81,7 @@ def _build_summary(
         "blocked_regime": int(diagnostics.get("signals_blocked_regime", 0)),
         "blocked_risk": int(diagnostics.get("signals_blocked_risk", 0)),
         "blocked_killswitch": int(diagnostics.get("signals_blocked_killswitch", 0)),
+        "blocked_mode": int(diagnostics.get("signals_blocked_mode", 0)),
         "killswitch_events": int(diagnostics.get("killswitch_events", 0)),
     }
     return summary
@@ -157,6 +158,7 @@ def _execute_backtest(
             f" | blocked_regime={diag.get('signals_blocked_regime', 0)}"
             f" | blocked_risk={diag.get('signals_blocked_risk', 0)}"
             f" | blocked_killswitch={diag.get('signals_blocked_killswitch', 0)}"
+            f" | blocked_mode={diag.get('signals_blocked_mode', 0)}"
             f" | entries_executed={diag.get('entries_executed', 0)}"
             f" | killswitch_events={diag.get('killswitch_events', 0)}"
             f" | first_killswitch_at={diag.get('first_killswitch_at')}"
@@ -189,9 +191,18 @@ def backtest(
     run_name: str | None = typer.Option(None, "--run-name"),
     seed: int | None = typer.Option(None, "--seed"),
     tag: str | None = typer.Option(None, "--tag"),
+    mode: str | None = typer.Option(None, "--mode"),
+    atr_k: float | None = typer.Option(None, "--atr-k"),
+    ml_threshold: float | None = typer.Option(None, "--ml-threshold"),
     dry_run: bool = typer.Option(False, "--dry-run"),
 ):
     cfg = load_settings(config)
+    if mode is not None:
+        cfg.strategy_breakout.mode = mode  # type: ignore[assignment]
+    if atr_k is not None:
+        cfg.strategy_breakout.atr_k = atr_k
+    if ml_threshold is not None:
+        cfg.strategy_breakout.ml_prob_threshold = ml_threshold
     manager = RunManager(outdir)
     ctx = manager.build_context(cfg, run_name=run_name)
 

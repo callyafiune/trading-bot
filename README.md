@@ -5,6 +5,7 @@ MVP funcional de bot BTCUSDT 1H para Binance com:
 - feature engineering determinístico
 - detector de regime (TREND/RANGE/CHAOS)
 - estratégia baseline breakout + ATR
+- modos opcionais de sinal: `ema`, `ema_macd`, `ml_gate`
 - backtest com fricções realistas
 - paper trading simulado
 - conectores para execução real em margin Binance
@@ -40,6 +41,14 @@ python -m bot backtest \
   --run-name minha_run \
   --seed 42 \
   --tag baseline
+```
+
+
+Exemplos de modos estratégicos:
+```bash
+python -m bot backtest --data-path ... --mode ema
+python -m bot backtest --data-path ... --mode ema_macd --atr-k 2.5
+python -m bot backtest --data-path ... --mode ml_gate --ml-threshold 0.58
 ```
 
 Para validar sem executar:
@@ -101,7 +110,7 @@ python -m bot live --no-dry-run
 
 ## Observações de modelagem
 - Sinal calculado no close de `t`; execução sempre no open de `t+1`.
-- Sem ML e sem order book nesta versão.
+- `ml_gate` usa classificador XGBoost com seleção de features por importância e validação walk-forward (double OOS).
 - Fricções: fee, slippage e juros de empréstimo por hora.
 - Logs estruturados em JSON.
 
