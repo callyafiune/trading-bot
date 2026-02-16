@@ -8,6 +8,7 @@ class Fill:
     price: float
     qty: float
     fee: float
+    slippage: float
 
 
 class BrokerSim:
@@ -18,9 +19,11 @@ class BrokerSim:
     def execute_entry(self, side: str, open_price: float, qty: float) -> Fill:
         price = open_price * (1 + self.slippage_rate) if side == "LONG" else open_price * (1 - self.slippage_rate)
         fee = price * qty * self.fee_rate
-        return Fill(price, qty, fee)
+        slippage = abs(price - open_price) * qty
+        return Fill(price, qty, fee, slippage)
 
     def execute_exit(self, side: str, price: float, qty: float) -> Fill:
         exec_price = price * (1 - self.slippage_rate) if side == "LONG" else price * (1 + self.slippage_rate)
         fee = exec_price * qty * self.fee_rate
-        return Fill(exec_price, qty, fee)
+        slippage = abs(exec_price - price) * qty
+        return Fill(exec_price, qty, fee, slippage)
