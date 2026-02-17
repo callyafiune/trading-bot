@@ -168,7 +168,7 @@ class BreakoutATRStrategy:
         return decision.signal, decision.blocked_reason
 
     def _raw_signal_by_mode(self, df: pd.DataFrame, i: int) -> tuple[Signal | None, str | None]:
-        if self.settings.mode == "breakout":
+        if self.settings.mode in ("breakout", "baseline"):
             if i < self.settings.breakout_lookback_N + 1:
                 return None, "warmup"
             return self._breakout_signal(df, i)
@@ -184,7 +184,7 @@ class BreakoutATRStrategy:
 
     def _mode_filter_reason(self, df: pd.DataFrame, i: int, signal: Signal) -> str | None:
         row = df.iloc[i]
-        if self.settings.mode == "breakout":
+        if self.settings.mode in ("breakout", "baseline"):
             if self.settings.use_rel_volume_filter and row.get("rel_volume_24", 0.0) < self.settings.min_rel_volume:
                 return "rel_volume"
             return None
