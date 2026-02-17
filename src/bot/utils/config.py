@@ -18,7 +18,7 @@ class RegimeSettings(BaseModel):
 
 
 class StrategyBreakoutSettings(BaseModel):
-    mode: Literal["breakout", "ema", "ema_macd", "ml_gate"] = "breakout"
+    mode: Literal["breakout", "baseline", "ema", "ema_macd", "ml_gate"] = "breakout"
     breakout_lookback_N: int = 72
     ema_fast_period: int = 12
     ema_slow_period: int = 26

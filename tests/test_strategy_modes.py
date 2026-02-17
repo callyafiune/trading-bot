@@ -29,7 +29,7 @@ def test_all_modes_respect_regime_detector() -> None:
     i = 220
     df.loc[df.index[i], "regime"] = "RANGE"
 
-    for mode in ["breakout", "ema", "ema_macd", "ml_gate"]:
+    for mode in ["breakout", "baseline", "ema", "ema_macd", "ml_gate"]:
         cfg = StrategyBreakoutSettings(mode=mode, use_ma200_filter=False)
         strategy = BreakoutATRStrategy(cfg)
         sig, reason = strategy.signal_decision(df, i)
@@ -65,3 +65,22 @@ def test_ml_gate_blocks_when_probability_below_threshold() -> None:
     sig, reason = strategy.signal_decision(df, i)
     assert sig is None
     assert reason == "ml_gate"
+
+
+def test_baseline_mode_generates_signals() -> None:
+    df = _base_df()
+    strategy = BreakoutATRStrategy(
+        StrategyBreakoutSettings(mode="baseline", breakout_lookback_N=20, use_ma200_filter=False, use_rel_volume_filter=False)
+    )
+
+    signals_total = 0
+    blocked_mode = 0
+    for i in range(1, len(df) - 1):
+        decision = strategy.evaluate_signal(df, i)
+        if decision.raw_signal is not None:
+            signals_total += 1
+        if decision.blocked_reason in ("macd_gate", "ml_gate", "unsupported_mode"):
+            blocked_mode += 1
+
+    assert signals_total > 0
+    assert blocked_mode == 0
