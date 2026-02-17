@@ -199,6 +199,8 @@ def backtest(
     adx_threshold: float | None = typer.Option(None, "--adx-threshold"),
     use_ma200_filter: bool | None = typer.Option(None, "--use-ma200-filter/--no-use-ma200-filter"),
     ml_threshold: float | None = typer.Option(None, "--ml-threshold"),
+    long_only: bool = typer.Option(False, "--long-only"),
+    short_only: bool = typer.Option(False, "--short-only"),
     dry_run: bool = typer.Option(False, "--dry-run"),
 ):
     cfg = load_settings(config)
@@ -214,6 +216,12 @@ def backtest(
         cfg.strategy_breakout.use_ma200_filter = use_ma200_filter
     if ml_threshold is not None:
         cfg.strategy_breakout.ml_prob_threshold = ml_threshold
+    if long_only and short_only:
+        raise typer.BadParameter("Use apenas uma entre --long-only e --short-only")
+    if long_only:
+        cfg.strategy_breakout.trade_direction = "long"
+    if short_only:
+        cfg.strategy_breakout.trade_direction = "short"
     manager = RunManager(outdir)
     ctx = manager.build_context(cfg, run_name=run_name)
 

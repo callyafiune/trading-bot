@@ -61,6 +61,8 @@ Exemplos de modos estratégicos:
 python -m bot backtest --data-path ... --mode ema
 python -m bot backtest --data-path ... --mode ema_macd --atr-k 2.5 --adx-threshold 28
 python -m bot backtest --data-path ... --mode ml_gate --ml-threshold 0.58 --use-ma200-filter
+python -m bot backtest --data-path ... --short-only
+python -m bot backtest --data-path ... --long-only
 ```
 
 Para validar sem executar:
