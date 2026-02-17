@@ -183,6 +183,12 @@ class BreakoutATRStrategy:
         return None, "unsupported_mode"
 
     def _mode_filter_reason(self, df: pd.DataFrame, i: int, signal: Signal) -> str | None:
+        direction = self.settings.trade_direction
+        if direction == "long" and signal.side == "SHORT":
+            return "direction"
+        if direction == "short" and signal.side == "LONG":
+            return "direction"
+
         row = df.iloc[i]
         if self.settings.mode in ("breakout", "baseline"):
             if self.settings.use_rel_volume_filter and row.get("rel_volume_24", 0.0) < self.settings.min_rel_volume:

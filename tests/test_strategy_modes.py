@@ -84,3 +84,33 @@ def test_baseline_mode_generates_signals() -> None:
 
     assert signals_total > 0
     assert blocked_mode == 0
+
+
+def test_trade_direction_short_only_blocks_long_signal() -> None:
+    df = _base_df()
+    i = 30
+    df.loc[df.index[i - 1], ["ema_12", "ema_26"]] = [99.0, 100.0]
+    df.loc[df.index[i], ["ema_12", "ema_26"]] = [101.0, 100.0]
+
+    strategy = BreakoutATRStrategy(
+        StrategyBreakoutSettings(mode="ema", use_ma200_filter=False, trade_direction="short")
+    )
+    sig, reason = strategy.signal_decision(df, i)
+
+    assert sig is None
+    assert reason == "direction"
+
+
+def test_trade_direction_long_only_blocks_short_signal() -> None:
+    df = _base_df()
+    i = 30
+    df.loc[df.index[i - 1], ["ema_12", "ema_26"]] = [101.0, 100.0]
+    df.loc[df.index[i], ["ema_12", "ema_26"]] = [99.0, 100.0]
+
+    strategy = BreakoutATRStrategy(
+        StrategyBreakoutSettings(mode="ema", use_ma200_filter=False, trade_direction="long")
+    )
+    sig, reason = strategy.signal_decision(df, i)
+
+    assert sig is None
+    assert reason == "direction"

@@ -40,6 +40,7 @@ class StrategyBreakoutSettings(BaseModel):
     ml_prob_threshold: float = 0.55
     ml_feature_selector: Literal["lightgbm", "xgboost"] = "lightgbm"
     ml_feature_top_k: int = 8
+    trade_direction: Literal["both", "long", "short"] = "both"
 
 
 class RiskSettings(BaseModel):
