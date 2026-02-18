@@ -6,7 +6,7 @@ from typing import Literal
 import numpy as np
 import pandas as pd
 
-from bot.utils.config import StrategyBreakoutSettings
+from bot.utils.config import StrategyBreakoutSettings, StrategyRouterSettings
 
 try:
     from xgboost import XGBClassifier
@@ -31,8 +31,9 @@ class SignalDecision:
 
 
 class BreakoutATRStrategy:
-    def __init__(self, settings: StrategyBreakoutSettings) -> None:
+    def __init__(self, settings: StrategyBreakoutSettings, router_settings: StrategyRouterSettings | None = None) -> None:
         self.settings = settings
+        self.router_settings = router_settings or StrategyRouterSettings()
         self.ml_probabilities = pd.Series(dtype=float)
         self.ml_threshold_by_index: dict[int, float] = {}
         self.selected_features: list[str] = []
@@ -112,7 +113,6 @@ class BreakoutATRStrategy:
         return out
 
     def _select_features(self, train_xy: pd.DataFrame, feature_cols: list[str]) -> list[str]:
-        # LightGBM-inspired selection by importance rank; fallback keeps all if selector unavailable.
         model = XGBClassifier(
             n_estimators=120,
             max_depth=3,
@@ -145,13 +145,12 @@ class BreakoutATRStrategy:
         row = df.iloc[i]
         raw_signal, raw_reason = self._raw_signal_by_mode(df, i)
 
-        if row.get("regime") != "TREND":
-            if raw_reason == "warmup":
-                return SignalDecision(signal=None, blocked_reason="warmup", raw_signal=None)
-            return SignalDecision(signal=None, blocked_reason="regime", raw_signal=raw_signal)
-
         if raw_signal is None:
             return SignalDecision(signal=None, blocked_reason=raw_reason, raw_signal=None)
+
+        regime_block = self._router_block_reason(row, raw_signal)
+        if regime_block:
+            return SignalDecision(signal=None, blocked_reason=regime_block, raw_signal=raw_signal)
 
         mode_block = self._mode_filter_reason(df, i, raw_signal)
         if mode_block:
@@ -166,6 +165,27 @@ class BreakoutATRStrategy:
     def signal_decision(self, df: pd.DataFrame, i: int) -> tuple[Signal | None, str | None]:
         decision = self.evaluate_signal(df, i)
         return decision.signal, decision.blocked_reason
+
+    def _router_block_reason(self, row: pd.Series, signal: Signal) -> str | None:
+        if self.settings.trade_direction == "long":
+            return "direction" if signal.side == "SHORT" else None
+        if self.settings.trade_direction == "short":
+            return "direction" if signal.side == "LONG" else None
+
+        regime = str(row.get("regime", ""))
+        if regime == "TREND_UP":
+            if not self.router_settings.enable_trend_up_long:
+                return "blocked_trend_up_flat"
+            return "blocked_trend_up_short_only" if signal.side == "SHORT" else None
+        if regime == "TREND_DOWN":
+            if not self.router_settings.enable_trend_down_short:
+                return "blocked_trend_down_flat"
+            return "blocked_trend_down_long_only" if signal.side == "LONG" else None
+        if regime == "RANGE":
+            return None if self.router_settings.enable_range else "blocked_range_flat"
+        if regime == "CHAOS":
+            return None if self.router_settings.enable_chaos else "blocked_chaos_flat"
+        return "blocked_regime_unknown"
 
     def _raw_signal_by_mode(self, df: pd.DataFrame, i: int) -> tuple[Signal | None, str | None]:
         if self.settings.mode in ("breakout", "baseline"):
@@ -183,12 +203,6 @@ class BreakoutATRStrategy:
         return None, "unsupported_mode"
 
     def _mode_filter_reason(self, df: pd.DataFrame, i: int, signal: Signal) -> str | None:
-        direction = self.settings.trade_direction
-        if direction == "long" and signal.side == "SHORT":
-            return "direction"
-        if direction == "short" and signal.side == "LONG":
-            return "direction"
-
         row = df.iloc[i]
         if self.settings.mode in ("breakout", "baseline"):
             if self.settings.use_rel_volume_filter and row.get("rel_volume_24", 0.0) < self.settings.min_rel_volume:
@@ -226,6 +240,9 @@ class BreakoutATRStrategy:
 
     def _ma200_filter_reason(self, row: pd.Series, signal: Signal) -> str | None:
         if not self.settings.use_ma200_filter:
+            return None
+
+        if signal.side == "SHORT" and not self.router_settings.short_use_ma200_filter:
             return None
 
         ma_col = f"ma_{self.settings.ma200_period}"

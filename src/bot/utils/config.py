@@ -15,6 +15,15 @@ class RegimeSettings(BaseModel):
     adx_trend_threshold: float = 28
     bb_period: int = 20
     bb_width_range_threshold: float = 0.06
+    chaos_atr_pct_threshold: float = 0.03
+
+
+class StrategyRouterSettings(BaseModel):
+    enable_trend_up_long: bool = True
+    enable_trend_down_short: bool = True
+    enable_range: bool = False
+    enable_chaos: bool = False
+    short_use_ma200_filter: bool = False
 
 
 class StrategyBreakoutSettings(BaseModel):
@@ -75,6 +84,7 @@ class Settings(BaseModel):
     end_date: str
     regime: RegimeSettings = Field(default_factory=RegimeSettings)
     strategy_breakout: StrategyBreakoutSettings = Field(default_factory=StrategyBreakoutSettings)
+    strategy_router: StrategyRouterSettings = Field(default_factory=StrategyRouterSettings)
     risk: RiskSettings = Field(default_factory=RiskSettings)
     frictions: FrictionsSettings = Field(default_factory=FrictionsSettings)
     execution: ExecutionSettings = Field(default_factory=ExecutionSettings)

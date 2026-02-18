@@ -36,7 +36,7 @@ def test_run_directory_and_main_artifacts_created(tmp_path):
                 "fees": 0.1,
                 "slippage": 0.05,
                 "interest": 0.05,
-                "regime_at_entry": "TREND",
+                "regime_at_entry": "TREND_UP",
                 "hold_hours": 1,
             }
         ]
@@ -66,6 +66,9 @@ def test_run_directory_and_main_artifacts_created(tmp_path):
         "short_trades": 0,
         "pnl_long": 0.8,
         "pnl_short": 0.0,
+        "trades_by_regime": {"TREND_UP": 1},
+        "pnl_by_regime": {"TREND_UP": 0.8},
+        "blocked_by_regime_reason": {},
         "counts": {
             "signals_total": 1,
             "entries_executed": 1,
@@ -81,7 +84,7 @@ def test_run_directory_and_main_artifacts_created(tmp_path):
         summary=summary,
         trades=trades,
         equity=equity,
-        regime_stats={"TREND": {"candles_count": 1, "pct_time": 1.0, "trades_count": 1, "pnl_net_total": 0.8, "avg_pnl": 0.8, "win_rate": 1.0}},
+        regime_stats={"TREND_UP": {"candles_count": 1, "pct_time": 1.0, "trades_count": 1, "pnl_net_total": 0.8, "avg_pnl": 0.8, "win_rate": 1.0}},
         direction_stats={"LONG": {"trades_count": 1, "pnl_net_total": 0.8, "avg_pnl": 0.8, "win_rate": 1.0, "avg_hold_hours": 1.0}},
     )
 
@@ -127,6 +130,9 @@ def test_trades_csv_has_minimum_columns(tmp_path):
             "short_trades": 0,
             "pnl_long": 0.0,
             "pnl_short": 0.0,
+            "trades_by_regime": {},
+            "pnl_by_regime": {},
+            "blocked_by_regime_reason": {},
             "counts": {
                 "signals_total": 0,
                 "entries_executed": 0,

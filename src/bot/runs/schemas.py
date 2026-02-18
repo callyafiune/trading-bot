@@ -33,6 +33,9 @@ class BacktestSummary(BaseModel):
     short_trades: int = 0
     pnl_long: float = 0.0
     pnl_short: float = 0.0
+    trades_by_regime: dict[str, int] = Field(default_factory=dict)
+    pnl_by_regime: dict[str, float] = Field(default_factory=dict)
+    blocked_by_regime_reason: dict[str, int] = Field(default_factory=dict)
     counts: SummaryCounts = Field(default_factory=SummaryCounts)
 
 

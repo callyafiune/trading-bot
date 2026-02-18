@@ -15,7 +15,7 @@ def test_stop_intrabar_priority():
             "close": [100, 101, 103, 104, 104],
             "volume": [2000] * 5,
             "atr_14": [1] * 5,
-            "regime": ["TREND"] * 5,
+            "regime": ["TREND_UP"] * 5,
             "rel_volume_24": [2] * 5,
         }
     )

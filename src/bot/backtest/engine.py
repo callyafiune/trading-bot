@@ -27,7 +27,7 @@ class Position:
 class BacktestEngine:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
-        self.strategy = BreakoutATRStrategy(settings.strategy_breakout)
+        self.strategy = BreakoutATRStrategy(settings.strategy_breakout, settings.strategy_router)
         self.risk = RiskManager(settings.risk)
         self.broker = BrokerSim(settings.frictions.fee_rate_per_side, settings.frictions.slippage_rate_per_side)
         self.last_run_diagnostics: dict[str, int | float | str | None] = {}
@@ -51,6 +51,7 @@ class BacktestEngine:
             "first_killswitch_at": None,
             "signals_blocked_mode": 0,
             "signals_blocked_ma200": 0,
+            "blocked_by_regime_reason": {},
         }
 
         day_anchor: pd.Timestamp | None = None
@@ -165,8 +166,11 @@ class BacktestEngine:
                 if decision.raw_signal is not None:
                     diagnostics["signals_total"] += 1
 
-                if blocked_reason == "regime":
+                if blocked_reason and blocked_reason.startswith("blocked_"):
                     diagnostics["signals_blocked_regime"] += 1
+                    blocked_by_regime = diagnostics["blocked_by_regime_reason"]
+                    assert isinstance(blocked_by_regime, dict)
+                    blocked_by_regime[blocked_reason] = int(blocked_by_regime.get(blocked_reason, 0)) + 1
                 elif blocked_reason == "ma200":
                     diagnostics["signals_blocked_ma200"] += 1
                 elif blocked_reason in ("macd_gate", "ml_gate", "unsupported_mode"):

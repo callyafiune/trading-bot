@@ -75,6 +75,9 @@ def _build_summary(
     summary["short_trades"] = int((trades["direction"] == "SHORT").sum()) if not trades.empty else 0
     summary["pnl_long"] = float(trades.loc[trades["direction"] == "LONG", "pnl_net"].sum()) if not trades.empty else 0.0
     summary["pnl_short"] = float(trades.loc[trades["direction"] == "SHORT", "pnl_net"].sum()) if not trades.empty else 0.0
+    summary["trades_by_regime"] = trades.groupby("regime_at_entry").size().astype(int).to_dict() if not trades.empty else {}
+    summary["pnl_by_regime"] = trades.groupby("regime_at_entry")["pnl_net"].sum().astype(float).to_dict() if not trades.empty else {}
+    summary["blocked_by_regime_reason"] = diagnostics.get("blocked_by_regime_reason", {})
     summary["counts"] = {
         "signals_total": int(diagnostics.get("signals_total", 0)),
         "entries_executed": int(diagnostics.get("entries_executed", 0)),
@@ -89,7 +92,7 @@ def _build_summary(
 
 
 def _build_regime_stats(df: pd.DataFrame, trades: pd.DataFrame) -> dict[str, Any]:
-    regimes = ["TREND", "RANGE", "CHAOS"]
+    regimes = ["TREND_UP", "TREND_DOWN", "RANGE", "CHAOS"]
     total_candles = len(df)
     result: dict[str, Any] = {}
 
@@ -144,9 +147,10 @@ def _execute_backtest(
 
     df = build_features(df)
     df["regime"] = RegimeDetector(cfg.regime).apply(df)
-    trend_candles = int((df["regime"] == "TREND").sum())
-    trend_pct = (trend_candles / len(df)) * 100 if len(df) else 0.0
-    print(f"[cyan]Regime:[/cyan] TREND={trend_candles} ({trend_pct:.2f}%)")
+    trend_up = int((df["regime"] == "TREND_UP").sum())
+    trend_down = int((df["regime"] == "TREND_DOWN").sum())
+    trend_pct = ((trend_up + trend_down) / len(df)) * 100 if len(df) else 0.0
+    print(f"[cyan]Regime:[/cyan] TREND_UP={trend_up} | TREND_DOWN={trend_down} ({trend_pct:.2f}% trend)")
 
     engine = BacktestEngine(cfg)
     trades, equity = engine.run(df)

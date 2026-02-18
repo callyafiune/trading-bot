@@ -7,7 +7,7 @@ from bot.features.builder import build_features
 from bot.regime.detector import RegimeDetector
 from bot.runs.run_manager import RunManager
 from bot.strategy.breakout_atr import BreakoutATRStrategy, Signal
-from bot.utils.config import RegimeSettings, StrategyBreakoutSettings, load_settings
+from bot.utils.config import RegimeSettings, StrategyBreakoutSettings, StrategyRouterSettings, load_settings
 
 
 def _base_df(n: int = 320) -> pd.DataFrame:
@@ -23,7 +23,7 @@ def _base_df(n: int = 320) -> pd.DataFrame:
         }
     )
     out = build_features(df)
-    out["regime"] = "TREND"
+    out["regime"] = "TREND_UP"
     out["rel_volume_24"] = 2.0
     return out
 
@@ -33,7 +33,10 @@ def test_ma200_filter_directional() -> None:
 
     above = _base_df()
     above.loc[above.index[i], "ma_200"] = above.loc[above.index[i], "close"] - 10.0
-    strategy = BreakoutATRStrategy(StrategyBreakoutSettings(mode="ema", use_ma200_filter=True))
+    strategy = BreakoutATRStrategy(
+        StrategyBreakoutSettings(mode="ema", use_ma200_filter=True),
+        router_settings=StrategyRouterSettings(short_use_ma200_filter=True),
+    )
     long_signal = strategy._ma200_filter_reason(above.iloc[i], signal=Signal(side="LONG", reason="x"))
     short_signal = strategy._ma200_filter_reason(above.iloc[i], signal=Signal(side="SHORT", reason="x"))
     assert long_signal is None
@@ -52,8 +55,8 @@ def test_trend_threshold_reduces_trend_share() -> None:
     detector_low = RegimeDetector(RegimeSettings(adx_trend_threshold=20))
     detector_high = RegimeDetector(RegimeSettings(adx_trend_threshold=28))
 
-    trend_low = int((detector_low.apply(df) == "TREND").sum())
-    trend_high = int((detector_high.apply(df) == "TREND").sum())
+    trend_low = int((detector_low.apply(df).isin(["TREND_UP", "TREND_DOWN"])).sum())
+    trend_high = int((detector_high.apply(df).isin(["TREND_UP", "TREND_DOWN"])).sum())
     assert trend_high <= trend_low
 
 
@@ -76,7 +79,7 @@ def test_backtest_still_runs_and_writes_artifacts(tmp_path) -> None:
         summary=summary,
         trades=trades,
         equity=equity,
-        regime_stats={"TREND": {}},
+        regime_stats={"TREND_UP": {}, "TREND_DOWN": {}, "RANGE": {}, "CHAOS": {}},
         direction_stats={"LONG": {}, "SHORT": {}},
     )
 
