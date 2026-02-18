@@ -46,6 +46,14 @@ class StrategyRouterSettings(BaseModel):
     overrides: RouterOverrides = Field(default_factory=RouterOverrides)
 
 
+class RouterSettings(BaseModel):
+    enabled: bool = False
+    chaos_trade: bool = False
+    range_risk_multiplier: float = 0.5
+    trend_mode: Literal["breakout", "baseline", "ema", "ema_macd", "ml_gate"] = "breakout"
+    range_mode: Literal["breakout", "baseline", "ema", "ema_macd", "ml_gate"] = "ema_macd"
+
+
 class StrategyBreakoutSettings(BaseModel):
     class RetestSettings(BaseModel):
         enabled: bool = False
@@ -120,24 +128,17 @@ class FeatureSettings(BaseModel):
 
 class FundingFilterSettings(BaseModel):
     enabled: bool = False
-    mode: Literal["gate", "score"] = "gate"
-    short_gate_threshold: float = 0.0
-    long_gate_threshold: float = 0.0
     z_window: int = 168
-    z_abs_block: float = 2.0
-    action: Literal["block", "reduce_size"] = "block"
-    reduce_size_factor: float = 0.5
-    apply_to: list[Literal["long", "short"]] = Field(default_factory=lambda: ["long", "short"])
+    z_threshold: float = 1.0
+    block_short_if_z_lt: float = -1.0
+    block_long_if_z_gt: float = 1.0
 
 
-class RiskFngSettings(BaseModel):
+class FngFilterSettings(BaseModel):
     enabled: bool = False
     path: str = ""
-    low_threshold: int = 25
-    high_threshold: int = 75
-    mult_low: float = 0.5
-    mult_high: float = 0.75
-    apply_to: Literal["position_size", "risk_per_trade"] = "risk_per_trade"
+    block_long_if_gte: int = 80
+    block_short_if_lte: int = 20
 
 
 class MultiTimeframeSettings(BaseModel):
@@ -168,7 +169,8 @@ class Settings(BaseModel):
     features: FeatureSettings = Field(default_factory=FeatureSettings)
     regime: RegimeSettings = Field(default_factory=RegimeSettings)
     funding_filter: FundingFilterSettings = Field(default_factory=FundingFilterSettings)
-    risk_fng: RiskFngSettings = Field(default_factory=RiskFngSettings)
+    fng_filter: FngFilterSettings = Field(default_factory=FngFilterSettings)
+    router: RouterSettings = Field(default_factory=RouterSettings)
     multi_timeframe: MultiTimeframeSettings = Field(default_factory=MultiTimeframeSettings)
     time_exit: TimeExitSettings = Field(default_factory=TimeExitSettings)
     adaptive_trailing: AdaptiveTrailingSettings = Field(default_factory=AdaptiveTrailingSettings)

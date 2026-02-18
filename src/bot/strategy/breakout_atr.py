@@ -6,7 +6,14 @@ from typing import Literal
 import numpy as np
 import pandas as pd
 
-from bot.utils.config import FundingFilterSettings, MultiTimeframeSettings, StrategyBreakoutSettings, StrategyRouterSettings
+from bot.utils.config import (
+    FngFilterSettings,
+    FundingFilterSettings,
+    MultiTimeframeSettings,
+    RouterSettings,
+    StrategyBreakoutSettings,
+    StrategyRouterSettings,
+)
 
 try:
     from xgboost import XGBClassifier
@@ -36,12 +43,16 @@ class BreakoutATRStrategy:
         self,
         settings: StrategyBreakoutSettings,
         router_settings: StrategyRouterSettings | None = None,
+        router_policy: RouterSettings | None = None,
         funding_filter: FundingFilterSettings | None = None,
+        fng_filter: FngFilterSettings | None = None,
         mtf_settings: MultiTimeframeSettings | None = None,
     ) -> None:
         self.settings = settings
         self.router_settings = router_settings or StrategyRouterSettings()
+        self.router_policy = router_policy or RouterSettings()
         self.funding_filter = funding_filter or FundingFilterSettings()
+        self.fng_filter = fng_filter or FngFilterSettings()
         self.mtf_settings = mtf_settings or MultiTimeframeSettings()
         self.ml_probabilities = pd.Series(dtype=float)
         self.ml_threshold_by_index: dict[int, float] = {}
@@ -54,36 +65,21 @@ class BreakoutATRStrategy:
         if "funding_rate" not in out.columns:
             return out
 
+        window = max(2, int(self.funding_filter.z_window))
+        mean = out["funding_rate"].rolling(window, min_periods=window).mean()
+        std = out["funding_rate"].rolling(window, min_periods=window).std(ddof=0).replace(0.0, np.nan)
+        out["funding_z"] = (out["funding_rate"] - mean) / std
         if not self.funding_filter.enabled:
             return out
 
-        if self.funding_filter.mode == "gate":
-            long_block = out["funding_rate"] > float(self.funding_filter.long_gate_threshold)
-            short_block = out["funding_rate"] < float(self.funding_filter.short_gate_threshold)
-            if "long" not in self.funding_filter.apply_to:
-                long_block = pd.Series(False, index=out.index)
-            if "short" not in self.funding_filter.apply_to:
-                short_block = pd.Series(False, index=out.index)
-            out.loc[long_block, "funding_action"] = "block_long"
-            out.loc[short_block, "funding_action"] = "block_short"
-        else:
-            window = max(2, self.funding_filter.z_window)
-            mean = out["funding_rate"].rolling(window, min_periods=window).mean()
-            std = out["funding_rate"].rolling(window, min_periods=window).std(ddof=0).replace(0.0, np.nan)
-            out["funding_z"] = (out["funding_rate"] - mean) / std
-
-            long_block = out["funding_z"] > self.funding_filter.z_abs_block
-            short_block = out["funding_z"] < -self.funding_filter.z_abs_block
-            if "long" not in self.funding_filter.apply_to:
-                long_block = pd.Series(False, index=out.index)
-            if "short" not in self.funding_filter.apply_to:
-                short_block = pd.Series(False, index=out.index)
-
-            if self.funding_filter.action == "block":
-                out.loc[long_block, "funding_action"] = "block_long"
-                out.loc[short_block, "funding_action"] = "block_short"
-            else:
-                out.loc[long_block | short_block, "funding_action"] = "reduce_size"
+        z = out["funding_z"]
+        long_thr = float(self.funding_filter.block_long_if_z_gt)
+        short_thr = float(self.funding_filter.block_short_if_z_lt)
+        z_abs = abs(float(self.funding_filter.z_threshold))
+        long_block = z > max(long_thr, z_abs)
+        short_block = z < min(short_thr, -z_abs)
+        out.loc[long_block, "funding_action"] = "block_long"
+        out.loc[short_block, "funding_action"] = "block_short"
         return out
 
     def prepare(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -192,12 +188,13 @@ class BreakoutATRStrategy:
 
     def evaluate_signal(self, df: pd.DataFrame, i: int) -> SignalDecision:
         row = df.iloc[i]
-        raw_signal, raw_reason = self._raw_signal_by_mode(df, i)
+        mode = self._mode_for_row(row)
+        raw_signal, raw_reason = self._raw_signal_by_mode(df, i, mode)
 
         if raw_signal is None:
             return SignalDecision(signal=None, blocked_reason=raw_reason, raw_signal=None)
 
-        regime_block = self._router_block_reason(row, raw_signal)
+        regime_block = self._router_block_reason(row, raw_signal, mode)
         if regime_block:
             return SignalDecision(signal=None, blocked_reason=regime_block, raw_signal=raw_signal)
 
@@ -205,7 +202,11 @@ class BreakoutATRStrategy:
         if funding_block:
             return SignalDecision(signal=None, blocked_reason=funding_block, raw_signal=raw_signal)
 
-        mode_block = self._mode_filter_reason(df, i, raw_signal)
+        fng_block = self._fng_filter_reason(row, raw_signal)
+        if fng_block:
+            return SignalDecision(signal=None, blocked_reason=fng_block, raw_signal=raw_signal)
+
+        mode_block = self._mode_filter_reason(df, i, raw_signal, mode)
         if mode_block:
             return SignalDecision(signal=None, blocked_reason=mode_block, raw_signal=raw_signal)
 
@@ -223,7 +224,16 @@ class BreakoutATRStrategy:
         decision = self.evaluate_signal(df, i)
         return decision.signal, decision.blocked_reason
 
-    def _router_block_reason(self, row: pd.Series, signal: Signal) -> str | None:
+    def _mode_for_row(self, row: pd.Series) -> str:
+        if not self.router_policy.enabled:
+            return self.settings.mode
+        regime = str(row.get("regime", ""))
+        micro = regime.split("_")[-1] if "_" in regime else regime
+        if micro == "RANGE":
+            return self.router_policy.range_mode
+        return self.router_policy.trend_mode
+
+    def _router_block_reason(self, row: pd.Series, signal: Signal, mode: str) -> str | None:
         regime = str(row.get("regime", ""))
         macro = regime.split("_")[0] if "_" in regime else regime
         micro = regime.split("_")[-1] if "_" in regime else regime
@@ -238,10 +248,15 @@ class BreakoutATRStrategy:
             macro, micro = "TRANSITION", "CHAOS"
 
         if micro == "CHAOS":
+            if self.router_policy.enabled:
+                return None if self.router_policy.chaos_trade else "blocked_chaos_flat"
             return None if self.router_settings.enable_chaos else "blocked_chaos_flat"
 
         if micro == "RANGE":
-            return "blocked_range_flat"
+            if not self.router_policy.enabled:
+                return "blocked_range_flat"
+            if self.router_policy.range_mode == "breakout" and not self.router_settings.enable_range:
+                return "blocked_range_flat"
 
         if self.settings.trade_direction == "long":
             return "direction" if signal.side == "SHORT" else None
@@ -254,7 +269,7 @@ class BreakoutATRStrategy:
             if signal.side == "SHORT":
                 return "blocked_trend_up_short_only"
 
-            if self.settings.mode not in ("breakout", "baseline"):
+            if mode not in ("breakout", "baseline"):
                 return None
 
             close = row.get("close", np.nan)
@@ -290,16 +305,29 @@ class BreakoutATRStrategy:
 
     def _funding_filter_reason(self, row: pd.Series, signal: Signal) -> str | None:
         action = str(row.get("funding_action", "none"))
-        if action == "none" or action == "reduce_size":
+        if action == "none":
             return None
         if action == "block_long" and signal.side == "LONG":
-            return "funding"
+            return "funding_long"
         if action == "block_short" and signal.side == "SHORT":
-            return "funding"
+            return "funding_short"
         return None
 
-    def _raw_signal_by_mode(self, df: pd.DataFrame, i: int) -> tuple[Signal | None, str | None]:
-        if self.settings.mode in ("breakout", "baseline"):
+    def _fng_filter_reason(self, row: pd.Series, signal: Signal) -> str | None:
+        if not self.fng_filter.enabled:
+            return None
+        fng_value = row.get("fng_value", np.nan)
+        if pd.isna(fng_value):
+            return None
+        value = float(fng_value)
+        if signal.side == "LONG" and value >= float(self.fng_filter.block_long_if_gte):
+            return "fng_long"
+        if signal.side == "SHORT" and value <= float(self.fng_filter.block_short_if_lte):
+            return "fng_short"
+        return None
+
+    def _raw_signal_by_mode(self, df: pd.DataFrame, i: int, mode: str) -> tuple[Signal | None, str | None]:
+        if mode in ("breakout", "baseline"):
             lookback = self._breakout_lookback_for_row(df.iloc[i])
             if i < lookback + 1:
                 return None, "warmup"
@@ -308,23 +336,23 @@ class BreakoutATRStrategy:
         if i < 1:
             return None, "warmup"
 
-        if self.settings.mode == "ema":
+        if mode == "ema":
             return self._ema_signal(df, i)
-        if self.settings.mode in ("ema_macd", "ml_gate"):
+        if mode in ("ema_macd", "ml_gate"):
             return self._ema_signal(df, i)
         return None, "unsupported_mode"
 
-    def _mode_filter_reason(self, df: pd.DataFrame, i: int, signal: Signal) -> str | None:
+    def _mode_filter_reason(self, df: pd.DataFrame, i: int, signal: Signal, mode: str) -> str | None:
         row = df.iloc[i]
-        if self.settings.mode in ("breakout", "baseline"):
+        if mode in ("breakout", "baseline"):
             if self.settings.use_rel_volume_filter and row.get("rel_volume_24", 0.0) < self.settings.min_rel_volume:
                 return "rel_volume"
             return None
 
-        if self.settings.mode == "ema":
+        if mode == "ema":
             return None
 
-        if self.settings.mode in ("ema_macd", "ml_gate"):
+        if mode in ("ema_macd", "ml_gate"):
             if self.settings.use_rel_volume_filter and row.get("rel_volume_24", 0.0) <= self.settings.min_rel_volume:
                 return "rel_volume"
 
@@ -338,7 +366,7 @@ class BreakoutATRStrategy:
             if signal.side == "SHORT" and macd_line >= macd_signal:
                 return "macd_gate"
 
-            if self.settings.mode == "ml_gate":
+            if mode == "ml_gate":
                 prob = float(row.get("ml_prob", np.nan))
                 threshold = float(row.get("ml_threshold", self.settings.ml_prob_threshold))
                 if np.isnan(prob):
@@ -351,7 +379,10 @@ class BreakoutATRStrategy:
         return None
 
     def _ma200_filter_reason(self, row: pd.Series, signal: Signal) -> str | None:
-        if not self.settings.use_ma200_filter:
+        regime = str(row.get("regime", ""))
+        micro = regime.split("_")[-1] if "_" in regime else regime
+        force_trend_ma = self.router_policy.enabled and micro == "TREND"
+        if not self.settings.use_ma200_filter and not force_trend_ma:
             return None
 
         if signal.side == "SHORT" and not self.router_settings.short_use_ma200_filter:

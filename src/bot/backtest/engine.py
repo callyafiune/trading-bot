@@ -42,7 +42,9 @@ class BacktestEngine:
         self.strategy = BreakoutATRStrategy(
             settings.strategy_breakout,
             settings.strategy_router,
+            settings.router,
             settings.funding_filter,
+            settings.fng_filter,
             settings.multi_timeframe,
         )
         self.risk = RiskManager(settings.risk)
@@ -62,18 +64,13 @@ class BacktestEngine:
         return (entry_price - exit_price) * qty
 
     def _risk_multiplier(self, row: pd.Series, side: str) -> float:
-        if not self.settings.risk_fng.enabled:
+        _ = side
+        if not self.settings.router.enabled:
             return 1.0
-        fng = row.get("fng_value")
-        if pd.isna(fng):
-            return 1.0
-        fng_v = float(fng)
-        if fng_v <= float(self.settings.risk_fng.low_threshold):
-            return max(0.0, float(self.settings.risk_fng.mult_low))
-        if fng_v >= float(self.settings.risk_fng.high_threshold):
-            if side == "SHORT":
-                return max(0.0, float(self.settings.risk_fng.mult_high))
-            return 1.0
+        regime = str(row.get("regime", ""))
+        micro = regime.split("_")[-1] if "_" in regime else regime
+        if micro == "RANGE":
+            return max(0.0, float(self.settings.router.range_risk_multiplier))
         return 1.0
 
     def _update_stop(self, position: Position, close_price: float, atr: float, diagnostics: dict[str, int | float | str | None]) -> None:
@@ -252,6 +249,12 @@ class BacktestEngine:
             "signals_blocked_ma200": 0,
             "blocked_by_regime_reason": {},
             "blocked_funding": 0,
+            "blocked_funding_long": 0,
+            "blocked_funding_short": 0,
+            "blocked_funding_total": 0,
+            "blocked_fng_long": 0,
+            "blocked_fng_short": 0,
+            "blocked_fng_total": 0,
             "blocked_macro": 0,
             "blocked_micro": 0,
             "blocked_chaos": 0,
@@ -299,15 +302,10 @@ class BacktestEngine:
                     entry_open,
                     stop,
                     intent.side,
-                    risk_multiplier=risk_mult if self.settings.risk_fng.apply_to == "risk_per_trade" else 1.0,
+                    risk_multiplier=risk_mult,
                 )
                 if size.valid and size.qty > 0:
                     qty = size.qty
-                    if self.settings.risk_fng.enabled and self.settings.risk_fng.apply_to == "position_size":
-                        qty *= max(0.0, risk_mult)
-                    funding_action = str(row.get("funding_action", "none"))
-                    if funding_action == "reduce_size":
-                        qty *= self.settings.funding_filter.reduce_size_factor
                     if qty <= 0:
                         diagnostics["signals_blocked_risk"] += 1
                         intent = None
@@ -414,8 +412,20 @@ class BacktestEngine:
                         diagnostics["blocked_micro"] += 1
                     if "chaos" in blocked_reason:
                         diagnostics["blocked_chaos"] += 1
-                elif blocked_reason == "funding":
+                elif blocked_reason == "funding_long":
                     diagnostics["blocked_funding"] += 1
+                    diagnostics["blocked_funding_long"] += 1
+                    diagnostics["blocked_funding_total"] += 1
+                elif blocked_reason == "funding_short":
+                    diagnostics["blocked_funding"] += 1
+                    diagnostics["blocked_funding_short"] += 1
+                    diagnostics["blocked_funding_total"] += 1
+                elif blocked_reason == "fng_long":
+                    diagnostics["blocked_fng_long"] += 1
+                    diagnostics["blocked_fng_total"] += 1
+                elif blocked_reason == "fng_short":
+                    diagnostics["blocked_fng_short"] += 1
+                    diagnostics["blocked_fng_total"] += 1
                 elif blocked_reason == "ma200":
                     diagnostics["signals_blocked_ma200"] += 1
                 elif blocked_reason == "mtf":

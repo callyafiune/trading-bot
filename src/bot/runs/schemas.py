@@ -20,6 +20,10 @@ class SummaryCounts(BaseModel):
     blocked_cooldown: int = 0
     blocked_mtf: int = 0
     blocked_funding_count: int = 0
+    blocked_funding_long: int = 0
+    blocked_funding_short: int = 0
+    blocked_fng_long: int = 0
+    blocked_fng_short: int = 0
 
 
 class BacktestSummary(BaseModel):
@@ -50,6 +54,12 @@ class BacktestSummary(BaseModel):
     regime_switch_count_micro: int = 0
     regime_switch_count_total: int = 0
     blocked_funding: int = 0
+    blocked_funding_long: int = 0
+    blocked_funding_short: int = 0
+    blocked_funding_total: int = 0
+    blocked_fng_long: int = 0
+    blocked_fng_short: int = 0
+    blocked_fng_total: int = 0
     blocked_macro: int = 0
     blocked_micro: int = 0
     blocked_chaos: int = 0
@@ -69,6 +79,8 @@ class BacktestSummary(BaseModel):
     entry_retest_count: int = 0
     direction_buckets: dict[str, dict[str, float | int]] = Field(default_factory=dict)
     regime_buckets: dict[str, dict[str, float | int]] = Field(default_factory=dict)
+    features_present: list[str] = Field(default_factory=list)
+    time_in_regime: dict[str, int] = Field(default_factory=dict)
     counts: SummaryCounts = Field(default_factory=SummaryCounts)
 
 

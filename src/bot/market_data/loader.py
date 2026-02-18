@@ -4,7 +4,9 @@ from pathlib import Path
 
 import pandas as pd
 
+from bot.features.builder import build_features
 from bot.market_data.binance_client import INTERVAL_MS
+from bot.utils.config import FeatureSettings
 
 
 def resample_ohlcv(df: pd.DataFrame, timeframe: str) -> pd.DataFrame:
@@ -76,11 +78,19 @@ def merge_ohlcv_with_funding(ohlcv_1h: pd.DataFrame, funding_1h: pd.DataFrame) -
     return merged
 
 
-def save_parquet(df: pd.DataFrame, raw_path: Path, processed_path: Path, interval: str) -> None:
+def save_parquet(
+    df: pd.DataFrame,
+    raw_path: Path,
+    processed_path: Path,
+    interval: str,
+    feature_settings: FeatureSettings | None = None,
+) -> None:
     raw_path.parent.mkdir(parents=True, exist_ok=True)
     processed_path.parent.mkdir(parents=True, exist_ok=True)
     df.to_parquet(raw_path, index=False)
-    enforce_continuous_candles(df, interval).to_parquet(processed_path, index=False)
+    processed = enforce_continuous_candles(df, interval)
+    processed = build_features(processed, feature_settings)
+    processed.to_parquet(processed_path, index=False)
 
 
 def load_parquet(path: str | Path) -> pd.DataFrame:
@@ -105,9 +115,33 @@ def merge_fng_with_ohlcv(ohlcv: pd.DataFrame, fng_1d: pd.DataFrame) -> pd.DataFr
         return out
 
     fng = fng_1d.copy()
+    if "ts" in fng.columns and "open_time" not in fng.columns:
+        fng = fng.rename(columns={"ts": "open_time"})
     if "timestamp" in fng.columns and "open_time" not in fng.columns:
         fng = fng.rename(columns={"timestamp": "open_time"})
     fng = fng.sort_values("open_time")
     out = ohlcv.sort_values("open_time").merge(fng[["open_time", "fng_value"]], on="open_time", how="left")
     out["fng_value"] = out["fng_value"].ffill()
     return out
+
+
+def process_fng_to_1h(fng_daily: pd.DataFrame, start_date: str, end_date: str) -> pd.DataFrame:
+    start_ts = pd.Timestamp(start_date, tz="UTC")
+    end_ts = pd.Timestamp(end_date, tz="UTC")
+    idx = pd.date_range(start=start_ts, end=end_ts, freq="1h", inclusive="left")
+    if fng_daily.empty:
+        return pd.DataFrame({"ts": idx, "fng_value": pd.NA})
+
+    base = fng_daily.copy()
+    if "timestamp" in base.columns and "open_time" not in base.columns:
+        base = base.rename(columns={"timestamp": "open_time"})
+    base["open_time"] = pd.to_datetime(base["open_time"], utc=True).dt.floor("D")
+    base = base.sort_values("open_time").drop_duplicates(subset=["open_time"], keep="last")
+    hourly = (
+        base[["open_time", "fng_value"]]
+        .set_index("open_time")
+        .reindex(idx, method="ffill")
+        .rename_axis("ts")
+        .reset_index()
+    )
+    return hourly

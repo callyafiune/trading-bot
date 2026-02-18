@@ -62,8 +62,9 @@ def build_features(df: pd.DataFrame, settings: FeatureSettings | None = None) ->
     for n in [6, 24, 72]:
         out[f"realized_vol_{n}"] = ret1.rolling(n, min_periods=n).std()
 
-    out["atr_14"] = _atr(out, 14)
-    out["atr_pct"] = out["atr_14"] / out["close"]
+    out["atr14"] = _atr(out, 14)
+    out["atr_14"] = out["atr14"]
+    out["atr_pct"] = out["atr14"] / out["close"]
 
     out["ema_12"] = _ema(out["close"], 12)
     out["ema_26"] = _ema(out["close"], 26)
@@ -74,19 +75,25 @@ def build_features(df: pd.DataFrame, settings: FeatureSettings | None = None) ->
     for n in [20, 50, 200]:
         out[f"ma_{n}"] = out["close"].rolling(n, min_periods=n).mean()
         out[f"dist_ma_{n}_pct"] = (out["close"] - out[f"ma_{n}"]) / out[f"ma_{n}"]
+    out["ma200"] = out["ma_200"]
 
-    out["adx_14"] = _adx(out, 14)
+    out["adx14"] = _adx(out, 14)
+    out["adx_14"] = out["adx14"]
 
     out["ema50"] = _ema(out["close"], settings.ema_fast)
     out["ema200"] = _ema(out["close"], settings.ema_slow)
     out["slope_ema200"] = (out["ema200"] / out["ema200"].shift(settings.slope_window)) - 1.0
     out["slope_ema200_pct"] = out["slope_ema200"]
+    out["slope_ma200"] = (out["ma200"] - out["ma200"].shift(24)) / out["ma200"].shift(24)
+    out["slope_ma200_72h"] = (out["ma200"] - out["ma200"].shift(72)) / out["ma200"].shift(72)
 
     log_ret_1 = np.log(out["close"]).diff()
     vol_roll = log_ret_1.rolling(settings.vol_window, min_periods=settings.vol_window).std()
     if settings.annualize_vol:
         vol_roll = vol_roll * np.sqrt(24 * 365)
     out["vol_roll"] = vol_roll
+    out["rolling_vol_24h"] = log_ret_1.rolling(24, min_periods=24).std()
+    out["rolling_vol_168h"] = log_ret_1.rolling(168, min_periods=168).std()
 
     bb_mid = out["close"].rolling(20, min_periods=20).mean()
     bb_std = out["close"].rolling(20, min_periods=20).std()

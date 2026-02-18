@@ -25,22 +25,21 @@ regime:
   chaos_atr_pct_threshold: 0.03
 funding_filter:
   enabled: false
-  mode: gate
-  short_gate_threshold: 0.0
-  long_gate_threshold: 0.0
   z_window: 168
-  z_abs_block: 2.0
-  action: block
-  reduce_size_factor: 0.5
-  apply_to: [long, short]
-risk_fng:
+  z_threshold: 1.0
+  block_short_if_z_lt: -1.0
+  block_long_if_z_gt: 1.0
+fng_filter:
   enabled: false
   path: ""
-  low_threshold: 25
-  high_threshold: 75
-  mult_low: 0.5
-  mult_high: 0.75
-  apply_to: risk_per_trade
+  block_long_if_gte: 80
+  block_short_if_lte: 20
+router:
+  enabled: true
+  chaos_trade: false
+  range_risk_multiplier: 0.5
+  trend_mode: breakout
+  range_mode: ema_macd
 multi_timeframe:
   enabled: false
   timeframe: 4h

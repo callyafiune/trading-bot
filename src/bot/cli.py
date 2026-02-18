@@ -24,6 +24,7 @@ from bot.market_data.loader import (
     load_parquet,
     merge_fng_with_ohlcv,
     merge_ohlcv_with_funding,
+    process_fng_to_1h,
     process_funding_to_1h,
     resample_ohlcv,
     save_parquet,
@@ -95,6 +96,14 @@ def _build_summary(
     summary["regime_switch_count_micro"] = int(diagnostics.get("regime_switch_count_micro", 0))
     summary["regime_switch_count_total"] = int(diagnostics.get("regime_switch_count_total", 0))
     summary["blocked_funding"] = int(diagnostics.get("blocked_funding", 0))
+    summary["blocked_funding_long"] = int(diagnostics.get("blocked_funding_long", 0))
+    summary["blocked_funding_short"] = int(diagnostics.get("blocked_funding_short", 0))
+    summary["blocked_funding_total"] = int(diagnostics.get("blocked_funding_total", diagnostics.get("blocked_funding", 0)))
+    summary["blocked_fng_long"] = int(diagnostics.get("blocked_fng_long", 0))
+    summary["blocked_fng_short"] = int(diagnostics.get("blocked_fng_short", 0))
+    summary["blocked_fng_total"] = int(diagnostics.get("blocked_fng_total", 0))
+    summary["features_present"] = diagnostics.get("features_present", [])
+    summary["time_in_regime"] = diagnostics.get("time_in_regime", {})
     summary["blocked_macro"] = int(diagnostics.get("blocked_macro", 0))
     summary["blocked_micro"] = int(diagnostics.get("blocked_micro", 0))
     summary["blocked_chaos"] = int(diagnostics.get("blocked_chaos", 0))
@@ -155,6 +164,10 @@ def _build_summary(
         "blocked_cooldown": int(diagnostics.get("blocked_cooldown", 0)),
         "blocked_mtf": int(diagnostics.get("blocked_mtf", 0)),
         "blocked_funding_count": int(diagnostics.get("blocked_funding", 0)),
+        "blocked_funding_long": int(diagnostics.get("blocked_funding_long", 0)),
+        "blocked_funding_short": int(diagnostics.get("blocked_funding_short", 0)),
+        "blocked_fng_long": int(diagnostics.get("blocked_fng_long", 0)),
+        "blocked_fng_short": int(diagnostics.get("blocked_fng_short", 0)),
     }
     return summary
 
@@ -217,6 +230,26 @@ def _build_direction_stats(trades: pd.DataFrame) -> dict[str, Any]:
     return result
 
 
+REQUIRED_FEATURE_COLUMNS = [
+    "ema50",
+    "ema200",
+    "ma200",
+    "slope_ma200",
+    "slope_ma200_72h",
+    "rolling_vol_24h",
+    "rolling_vol_168h",
+    "atr14",
+    "adx14",
+]
+
+
+def _ensure_features(df: pd.DataFrame, cfg: Settings) -> pd.DataFrame:
+    missing = [c for c in REQUIRED_FEATURE_COLUMNS if c not in df.columns]
+    if not missing:
+        return df
+    return build_features(df, cfg.features)
+
+
 def _execute_backtest(
     data_path: str,
     cfg: Settings,
@@ -239,8 +272,8 @@ def _execute_backtest(
         funding_df = load_parquet(funding_path)
         df = merge_ohlcv_with_funding(df, funding_df)
 
-    if cfg.risk_fng.enabled:
-        resolved_fng = fng_path or cfg.risk_fng.path
+    if cfg.fng_filter.enabled:
+        resolved_fng = fng_path or cfg.fng_filter.path
         if resolved_fng:
             fng_df = load_parquet(resolved_fng)
             df = merge_fng_with_ohlcv(df, fng_df)
@@ -257,7 +290,7 @@ def _execute_backtest(
     )
 
     df = _attach_mtf_features(df, cfg)
-    df = build_features(df, cfg.features)
+    df = _ensure_features(df, cfg)
     df["regime"] = RegimeDetector(cfg.regime).apply(df)
     trend_up = int(df["regime"].astype(str).str.startswith("BULL").sum())
     trend_down = int(df["regime"].astype(str).str.startswith("BEAR").sum())
@@ -303,6 +336,8 @@ def _execute_backtest(
     engine.last_run_diagnostics["regime_switch_count_macro"] = int(df.get("regime_switch_macro", pd.Series(dtype=bool)).sum())
     engine.last_run_diagnostics["regime_switch_count_micro"] = int(df.get("regime_switch_micro", pd.Series(dtype=bool)).sum())
     engine.last_run_diagnostics["regime_switch_count_total"] = int(df.get("regime_switch_total", pd.Series(dtype=bool)).sum())
+    engine.last_run_diagnostics["time_in_regime"] = df["regime"].astype(str).value_counts().astype(int).to_dict()
+    engine.last_run_diagnostics["features_present"] = [c for c in REQUIRED_FEATURE_COLUMNS if c in df.columns]
     engine.last_run_diagnostics["mtf_enabled"] = bool(cfg.multi_timeframe.enabled)
     engine.last_run_diagnostics["detail_timeframe"] = cfg.execution.detail_timeframe.timeframe if cfg.execution.detail_timeframe.enabled else None
     engine.last_run_diagnostics["detail_policy"] = cfg.execution.detail_timeframe.policy if cfg.execution.detail_timeframe.enabled else None
@@ -322,7 +357,7 @@ def fetch_data(start: str = typer.Option(None), end: str = typer.Option(None), c
     df = BinanceDataClient().fetch_ohlcv(cfg.symbol, cfg.interval, start_date, end_date)
     raw_path = Path(f"data/raw/{cfg.symbol}_{cfg.interval}_{start_date}_{end_date}.parquet")
     proc_path = Path(f"data/processed/{cfg.symbol}_{cfg.interval}_{start_date}_{end_date}.parquet")
-    save_parquet(df, raw_path, proc_path, cfg.interval)
+    save_parquet(df, raw_path, proc_path, cfg.interval, feature_settings=cfg.features)
     print(f"Dados salvos em {raw_path} e {proc_path}")
 
 
@@ -352,13 +387,14 @@ def fetch_fng(
     end: str = typer.Option(..., "--end"),
 ):
     client = BinanceDataClient()
-    fng_df = client.fetch_fear_greed(start, end)
+    fng_daily = client.fetch_fear_greed(start, end)
+    fng_hourly = process_fng_to_1h(fng_daily, start, end)
     raw_path = Path(f"data/raw/fng/fng_1d_{start}_{end}.parquet")
-    proc_path = Path(f"data/processed/fng_1d_{start}_{end}.parquet")
+    proc_path = Path(f"data/processed/fng_BTC_1h_{start}_{end}.parquet")
     raw_path.parent.mkdir(parents=True, exist_ok=True)
     proc_path.parent.mkdir(parents=True, exist_ok=True)
-    fng_df.to_parquet(raw_path, index=False)
-    fng_df.to_parquet(proc_path, index=False)
+    fng_daily.to_parquet(raw_path, index=False)
+    fng_hourly.to_parquet(proc_path, index=False)
     print(f"Fear & Greed salvo em {raw_path} e {proc_path}")
 
 
@@ -384,6 +420,7 @@ def backtest(
     use_ma200_filter: bool | None = typer.Option(None, "--use-ma200-filter/--no-use-ma200-filter"),
     use_mtf: bool | None = typer.Option(None, "--enable-mtf/--disable-mtf"),
     fng_path: str | None = typer.Option(None, "--fng-path"),
+    disable_router: bool = typer.Option(False, "--disable-router"),
     ml_threshold: float | None = typer.Option(None, "--ml-threshold"),
     long_only: bool = typer.Option(False, "--long-only"),
     short_only: bool = typer.Option(False, "--short-only"),
@@ -404,6 +441,8 @@ def backtest(
         cfg.strategy_breakout.use_ma200_filter = use_ma200_filter
     if use_mtf is not None:
         cfg.multi_timeframe.enabled = use_mtf
+    if disable_router:
+        cfg.router.enabled = False
     if detail_timeframe is not None:
         cfg.execution.detail_timeframe.enabled = True
         cfg.execution.detail_timeframe.timeframe = detail_timeframe
@@ -484,7 +523,8 @@ def compare(
         "max_trade_R",
         "time_exit_triggered",
         "adaptive_trailing_triggered",
-        "blocked_funding",
+        "blocked_funding_total",
+        "blocked_fng_total",
     ]
 
     table = Table(title=f"Compare Runs (base: {Path(base_name).name})")
