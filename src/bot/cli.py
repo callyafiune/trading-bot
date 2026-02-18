@@ -19,7 +19,15 @@ from bot.backtest.reporting import print_summary
 from bot.execution.broker_binance import BrokerBinance
 from bot.features.builder import build_features
 from bot.market_data.binance_client import BinanceDataClient
-from bot.market_data.loader import load_parquet, merge_ohlcv_with_funding, process_funding_to_1h, resample_ohlcv, save_parquet
+from bot.market_data.loader import (
+    derive_detail_data_path,
+    load_parquet,
+    merge_fng_with_ohlcv,
+    merge_ohlcv_with_funding,
+    process_funding_to_1h,
+    resample_ohlcv,
+    save_parquet,
+)
 from bot.regime.detector import RegimeDetector
 from bot.runs.run_manager import RunManager
 from bot.runs.serializers import write_json
@@ -96,6 +104,40 @@ def _build_summary(
     summary["time_exit_triggered"] = int(diagnostics.get("time_exit_triggered", 0))
     summary["adaptive_trailing_triggered"] = int(diagnostics.get("adaptive_trailing_triggered", 0))
     summary["adaptive_trailing_stop_hits"] = int(diagnostics.get("adaptive_trailing_stop_hits", 0))
+    summary["detail_timeframe_enabled"] = bool(diagnostics.get("detail_timeframe_enabled", False))
+    summary["detail_timeframe"] = diagnostics.get("detail_timeframe", None)
+    summary["detail_policy"] = diagnostics.get("detail_policy", None)
+    summary["biggest_winner_pct"] = float((trades["pnl_net"] / trades["notional"]).max()) if not trades.empty else 0.0
+    summary["worst_loser_pct"] = float((trades["pnl_net"] / trades["notional"]).min()) if not trades.empty else 0.0
+    summary["max_trade_R"] = float(trades["R_multiple_exit"].max()) if "R_multiple_exit" in trades.columns and not trades.empty else 0.0
+    summary["entry_direct_count"] = int((trades.get("entry_type", pd.Series(dtype=str)) == "direct").sum()) if not trades.empty else 0
+    summary["entry_retest_count"] = int((trades.get("entry_type", pd.Series(dtype=str)) == "retest").sum()) if not trades.empty else 0
+    if not trades.empty:
+        dir_stats = {}
+        for direction in ["LONG", "SHORT"]:
+            td = trades.loc[trades["direction"] == direction]
+            gp = td.loc[td["pnl_net"] > 0, "pnl_net"].sum()
+            gl = td.loc[td["pnl_net"] < 0, "pnl_net"].sum()
+            dir_stats[direction] = {
+                "trades": int(len(td)),
+                "return_net": float(td["pnl_net"].sum() / max(equity["equity"].iloc[0], 1e-9)) if not equity.empty else 0.0,
+                "profit_factor": float(gp / abs(gl)) if gl < 0 else 0.0,
+            }
+        summary["direction_buckets"] = dir_stats
+
+        regime_stats = {}
+        for regime, rg in trades.groupby("regime_at_entry"):
+            gp = rg.loc[rg["pnl_net"] > 0, "pnl_net"].sum()
+            gl = rg.loc[rg["pnl_net"] < 0, "pnl_net"].sum()
+            regime_stats[str(regime)] = {
+                "trades": int(len(rg)),
+                "return_net": float(rg["pnl_net"].sum() / max(equity["equity"].iloc[0], 1e-9)) if not equity.empty else 0.0,
+                "profit_factor": float(gp / abs(gl)) if gl < 0 else 0.0,
+            }
+        summary["regime_buckets"] = regime_stats
+    else:
+        summary["direction_buckets"] = {}
+        summary["regime_buckets"] = {}
     summary["counts"] = {
         "signals_total": int(diagnostics.get("signals_total", 0)),
         "entries_executed": int(diagnostics.get("entries_executed", 0)),
@@ -112,6 +154,7 @@ def _build_summary(
         "blocked_range_flat": int(diagnostics.get("blocked_by_regime_reason", {}).get("blocked_range_flat", 0)),
         "blocked_cooldown": int(diagnostics.get("blocked_cooldown", 0)),
         "blocked_mtf": int(diagnostics.get("blocked_mtf", 0)),
+        "blocked_funding_count": int(diagnostics.get("blocked_funding", 0)),
     }
     return summary
 
@@ -178,11 +221,30 @@ def _execute_backtest(
     data_path: str,
     cfg: Settings,
     funding_path: str | None = None,
+    detail_data_path: str | None = None,
+    fng_path: str | None = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame, dict[str, Any], dict[str, Any], dict[str, Any]]:
     df = load_parquet(data_path)
+    if cfg.funding_filter.enabled and funding_path is None:
+        data_name = Path(data_path).name
+        if data_name.startswith("BTCUSDT_1h_"):
+            candidate = Path(data_path).with_name(f"funding_BTCUSDT_1h_{data_name.split('BTCUSDT_1h_', 1)[1]}")
+            if candidate.exists():
+                funding_path = str(candidate)
+        if funding_path is None:
+            print("[red]funding_filter.enabled=true requer --funding-path (ou arquivo derivado existente).[/red]")
+            raise typer.Exit(code=2)
+
     if funding_path:
         funding_df = load_parquet(funding_path)
         df = merge_ohlcv_with_funding(df, funding_df)
+
+    if cfg.risk_fng.enabled:
+        resolved_fng = fng_path or cfg.risk_fng.path
+        if resolved_fng:
+            fng_df = load_parquet(resolved_fng)
+            df = merge_fng_with_ohlcv(df, fng_df)
+
     if df.empty:
         print("[red]Dataset vazio. Verifique o arquivo de entrada.[/red]")
         raise typer.Exit(code=1)
@@ -202,8 +264,26 @@ def _execute_backtest(
     trend_pct = ((trend_up + trend_down) / len(df)) * 100 if len(df) else 0.0
     print(f"[cyan]Regime:[/cyan] BULL={trend_up} | BEAR={trend_down} ({trend_pct:.2f}% macro trend)")
 
+    detail_df: pd.DataFrame | None = None
+    if cfg.execution.detail_timeframe.enabled:
+        resolved_detail_path = detail_data_path
+        if not resolved_detail_path:
+            candidate = derive_detail_data_path(data_path, cfg.execution.detail_timeframe.timeframe)
+            if candidate and candidate.exists():
+                resolved_detail_path = str(candidate)
+        if resolved_detail_path:
+            detail_df = load_parquet(resolved_detail_path)
+            print(
+                f"[cyan]Detail TF:[/cyan] enabled={cfg.execution.detail_timeframe.enabled}"
+                f" | timeframe={cfg.execution.detail_timeframe.timeframe}"
+                f" | policy={cfg.execution.detail_timeframe.policy}"
+                f" | candles={len(detail_df)}"
+            )
+        else:
+            print("[yellow]Detail timeframe habilitado, mas dataset não encontrado. Rodando em HTF-only.[/yellow]")
+
     engine = BacktestEngine(cfg)
-    trades, equity = engine.run(df)
+    trades, equity = engine.run(df, detail_df=detail_df)
     print(f"[cyan]Backtest:[/cyan] total_trades={len(trades)}")
     if engine.last_run_diagnostics:
         diag = engine.last_run_diagnostics
@@ -224,6 +304,8 @@ def _execute_backtest(
     engine.last_run_diagnostics["regime_switch_count_micro"] = int(df.get("regime_switch_micro", pd.Series(dtype=bool)).sum())
     engine.last_run_diagnostics["regime_switch_count_total"] = int(df.get("regime_switch_total", pd.Series(dtype=bool)).sum())
     engine.last_run_diagnostics["mtf_enabled"] = bool(cfg.multi_timeframe.enabled)
+    engine.last_run_diagnostics["detail_timeframe"] = cfg.execution.detail_timeframe.timeframe if cfg.execution.detail_timeframe.enabled else None
+    engine.last_run_diagnostics["detail_policy"] = cfg.execution.detail_timeframe.policy if cfg.execution.detail_timeframe.enabled else None
 
     metrics = compute_metrics(trades, equity)
     summary = _build_summary(trades, equity, metrics, engine.last_run_diagnostics)
@@ -264,6 +346,22 @@ def fetch_funding(
     print(f"Funding salvo em {raw_path} e {proc_path}")
 
 
+@app.command("fetch-fng")
+def fetch_fng(
+    start: str = typer.Option(..., "--start"),
+    end: str = typer.Option(..., "--end"),
+):
+    client = BinanceDataClient()
+    fng_df = client.fetch_fear_greed(start, end)
+    raw_path = Path(f"data/raw/fng/fng_1d_{start}_{end}.parquet")
+    proc_path = Path(f"data/processed/fng_1d_{start}_{end}.parquet")
+    raw_path.parent.mkdir(parents=True, exist_ok=True)
+    proc_path.parent.mkdir(parents=True, exist_ok=True)
+    fng_df.to_parquet(raw_path, index=False)
+    fng_df.to_parquet(proc_path, index=False)
+    print(f"Fear & Greed salvo em {raw_path} e {proc_path}")
+
+
 @app.command("backtest")
 def backtest(
     data_path: str = typer.Option(..., "--data-path"),
@@ -277,8 +375,15 @@ def backtest(
     breakout_N: int | None = typer.Option(None, "--breakout-N"),
     adx_threshold: float | None = typer.Option(None, "--adx-threshold"),
     funding_path: str | None = typer.Option(None, "--funding-path"),
+    detail_data_path: str | None = typer.Option(None, "--detail-data-path"),
+    detail_timeframe: str | None = typer.Option(None, "--detail-timeframe"),
+    no_detail_timeframe: bool = typer.Option(False, "--no-detail-timeframe"),
+    retest: bool | None = typer.Option(None, "--require-retest/--no-require-retest"),
+    retest_window: int | None = typer.Option(None, "--retest-window"),
+    retest_tolerance_atr: float | None = typer.Option(None, "--retest-tolerance-atr"),
     use_ma200_filter: bool | None = typer.Option(None, "--use-ma200-filter/--no-use-ma200-filter"),
     use_mtf: bool | None = typer.Option(None, "--enable-mtf/--disable-mtf"),
+    fng_path: str | None = typer.Option(None, "--fng-path"),
     ml_threshold: float | None = typer.Option(None, "--ml-threshold"),
     long_only: bool = typer.Option(False, "--long-only"),
     short_only: bool = typer.Option(False, "--short-only"),
@@ -299,6 +404,17 @@ def backtest(
         cfg.strategy_breakout.use_ma200_filter = use_ma200_filter
     if use_mtf is not None:
         cfg.multi_timeframe.enabled = use_mtf
+    if detail_timeframe is not None:
+        cfg.execution.detail_timeframe.enabled = True
+        cfg.execution.detail_timeframe.timeframe = detail_timeframe
+    if no_detail_timeframe:
+        cfg.execution.detail_timeframe.enabled = False
+    if retest is not None:
+        cfg.strategy_breakout.retest.enabled = retest
+    if retest_window is not None:
+        cfg.strategy_breakout.retest.window_bars = retest_window
+    if retest_tolerance_atr is not None:
+        cfg.strategy_breakout.retest.tolerance_atr = retest_tolerance_atr
     if ml_threshold is not None:
         cfg.strategy_breakout.ml_prob_threshold = ml_threshold
     if long_only and short_only:
@@ -315,7 +431,13 @@ def backtest(
         return
 
     manager.init_run(ctx, settings=cfg, data_path=data_path, config_path=config, seed=seed, tag=tag)
-    trades, equity, summary, regime_stats, direction_stats = _execute_backtest(data_path, cfg, funding_path=funding_path)
+    trades, equity, summary, regime_stats, direction_stats = _execute_backtest(
+        data_path,
+        cfg,
+        funding_path=funding_path,
+        detail_data_path=detail_data_path,
+        fng_path=fng_path,
+    )
     manager.persist_outputs(
         ctx,
         summary=summary,
@@ -357,6 +479,12 @@ def compare(
         "turnover",
         "avg_hours_in_pos",
         "total_trades",
+        "biggest_winner_pct",
+        "worst_loser_pct",
+        "max_trade_R",
+        "time_exit_triggered",
+        "adaptive_trailing_triggered",
+        "blocked_funding",
     ]
 
     table = Table(title=f"Compare Runs (base: {Path(base_name).name})")

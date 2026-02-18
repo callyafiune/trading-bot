@@ -25,23 +25,34 @@ regime:
   chaos_atr_pct_threshold: 0.03
 funding_filter:
   enabled: false
+  mode: gate
+  short_gate_threshold: 0.0
+  long_gate_threshold: 0.0
   z_window: 168
   z_abs_block: 2.0
   action: block
   reduce_size_factor: 0.5
   apply_to: [long, short]
+risk_fng:
+  enabled: false
+  path: ""
+  low_threshold: 25
+  high_threshold: 75
+  mult_low: 0.5
+  mult_high: 0.75
+  apply_to: risk_per_trade
 multi_timeframe:
-  enabled: true
+  enabled: false
   timeframe: 4h
   ma_period: 200
   require_trend_alignment: true
 time_exit:
-  enabled: true
+  enabled: false
   max_holding_hours: 24
   soft_exit_hours: 12
   min_r_multiple_after_soft: 1.0
 adaptive_trailing:
-  enabled: true
+  enabled: false
   activate_after_R: 1.5
   trailing_atr_multiplier: 1.5
 strategy_breakout:
@@ -67,6 +78,11 @@ strategy_breakout:
   ml_prob_threshold: 0.55
   ml_feature_selector: lightgbm
   ml_feature_top_k: 8
+  retest:
+    enabled: false
+    window_bars: 6
+    tolerance_atr: 0.25
+    confirmation: close_back
 strategy_router:
   enable_trend_up_long: true
   enable_trend_down_short: true
@@ -99,3 +115,7 @@ execution:
   api_key_env: BINANCE_API_KEY
   api_secret_env: BINANCE_API_SECRET
   dry_run: true
+  detail_timeframe:
+    enabled: false
+    timeframe: 15m
+    policy: conservative

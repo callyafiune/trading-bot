@@ -21,6 +21,7 @@ Side = Literal["LONG", "SHORT"]
 class Signal:
     side: Side
     reason: str
+    entry_type: str = "direct"
 
 
 @dataclass
@@ -45,6 +46,7 @@ class BreakoutATRStrategy:
         self.ml_probabilities = pd.Series(dtype=float)
         self.ml_threshold_by_index: dict[int, float] = {}
         self.selected_features: list[str] = []
+        self.pending_retest: dict[str, dict[str, float | int]] = {}
 
     def _attach_funding_features(self, out: pd.DataFrame) -> pd.DataFrame:
         out = out.copy()
@@ -52,29 +54,40 @@ class BreakoutATRStrategy:
         if "funding_rate" not in out.columns:
             return out
 
-        window = max(2, self.funding_filter.z_window)
-        mean = out["funding_rate"].rolling(window, min_periods=window).mean()
-        std = out["funding_rate"].rolling(window, min_periods=window).std(ddof=0).replace(0.0, np.nan)
-        out["funding_z"] = (out["funding_rate"] - mean) / std
-
         if not self.funding_filter.enabled:
             return out
 
-        long_block = out["funding_z"] > self.funding_filter.z_abs_block
-        short_block = out["funding_z"] < -self.funding_filter.z_abs_block
-        if "long" not in self.funding_filter.apply_to:
-            long_block = pd.Series(False, index=out.index)
-        if "short" not in self.funding_filter.apply_to:
-            short_block = pd.Series(False, index=out.index)
-
-        if self.funding_filter.action == "block":
+        if self.funding_filter.mode == "gate":
+            long_block = out["funding_rate"] > float(self.funding_filter.long_gate_threshold)
+            short_block = out["funding_rate"] < float(self.funding_filter.short_gate_threshold)
+            if "long" not in self.funding_filter.apply_to:
+                long_block = pd.Series(False, index=out.index)
+            if "short" not in self.funding_filter.apply_to:
+                short_block = pd.Series(False, index=out.index)
             out.loc[long_block, "funding_action"] = "block_long"
             out.loc[short_block, "funding_action"] = "block_short"
         else:
-            out.loc[long_block | short_block, "funding_action"] = "reduce_size"
+            window = max(2, self.funding_filter.z_window)
+            mean = out["funding_rate"].rolling(window, min_periods=window).mean()
+            std = out["funding_rate"].rolling(window, min_periods=window).std(ddof=0).replace(0.0, np.nan)
+            out["funding_z"] = (out["funding_rate"] - mean) / std
+
+            long_block = out["funding_z"] > self.funding_filter.z_abs_block
+            short_block = out["funding_z"] < -self.funding_filter.z_abs_block
+            if "long" not in self.funding_filter.apply_to:
+                long_block = pd.Series(False, index=out.index)
+            if "short" not in self.funding_filter.apply_to:
+                short_block = pd.Series(False, index=out.index)
+
+            if self.funding_filter.action == "block":
+                out.loc[long_block, "funding_action"] = "block_long"
+                out.loc[short_block, "funding_action"] = "block_short"
+            else:
+                out.loc[long_block | short_block, "funding_action"] = "reduce_size"
         return out
 
     def prepare(self, df: pd.DataFrame) -> pd.DataFrame:
+        self.pending_retest = {}
         out = self._attach_funding_features(df.copy())
         if self.settings.mode != "ml_gate":
             return out
@@ -363,11 +376,68 @@ class BreakoutATRStrategy:
         prev_low = lookback["low"].min()
         close = row["close"]
 
+        retest_sig = self._maybe_retest_signal(df, i)
+        if retest_sig is not None:
+            return retest_sig, None
+
         if close > prev_high:
-            return Signal(side="LONG", reason="breakout_high"), None
+            if not self.settings.retest.enabled:
+                return Signal(side="LONG", reason="breakout_high", entry_type="direct"), None
+            self.pending_retest["LONG"] = {
+                "level": float(prev_high),
+                "expires_idx": int(i + self.settings.retest.window_bars),
+            }
+            return None, "retest_wait"
         if close < prev_low:
-            return Signal(side="SHORT", reason="breakout_low"), None
+            if not self.settings.retest.enabled:
+                return Signal(side="SHORT", reason="breakout_low", entry_type="direct"), None
+            self.pending_retest["SHORT"] = {
+                "level": float(prev_low),
+                "expires_idx": int(i + self.settings.retest.window_bars),
+            }
+            return None, "retest_wait"
         return None, "no_breakout"
+
+    def _maybe_retest_signal(self, df: pd.DataFrame, i: int) -> Signal | None:
+        if not self.settings.retest.enabled:
+            return None
+        row = df.iloc[i]
+        atr = float(row.get("atr_14", np.nan))
+        if np.isnan(atr):
+            return None
+        tol = atr * float(self.settings.retest.tolerance_atr)
+
+        for side in ("LONG", "SHORT"):
+            pending = self.pending_retest.get(side)
+            if not pending:
+                continue
+            if i > int(pending["expires_idx"]):
+                self.pending_retest.pop(side, None)
+                continue
+            level = float(pending["level"])
+            if side == "SHORT":
+                touched = float(row["high"]) >= level - tol
+                if not touched:
+                    continue
+                if self.settings.retest.confirmation == "wick_reject":
+                    confirmed = float(row["close"]) < float(row["open"]) and float(row["close"]) < level
+                else:
+                    confirmed = float(row["close"]) < level
+                if confirmed:
+                    self.pending_retest.pop(side, None)
+                    return Signal(side="SHORT", reason="breakout_retest", entry_type="retest")
+            else:
+                touched = float(row["low"]) <= level + tol
+                if not touched:
+                    continue
+                if self.settings.retest.confirmation == "wick_reject":
+                    confirmed = float(row["close"]) > float(row["open"]) and float(row["close"]) > level
+                else:
+                    confirmed = float(row["close"]) > level
+                if confirmed:
+                    self.pending_retest.pop(side, None)
+                    return Signal(side="LONG", reason="breakout_retest", entry_type="retest")
+        return None
 
     def _mtf_filter_reason(self, row: pd.Series, signal: Signal) -> str | None:
         if not self.mtf_settings.enabled or not self.mtf_settings.require_trend_alignment:

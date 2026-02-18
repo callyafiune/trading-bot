@@ -47,6 +47,12 @@ class StrategyRouterSettings(BaseModel):
 
 
 class StrategyBreakoutSettings(BaseModel):
+    class RetestSettings(BaseModel):
+        enabled: bool = False
+        window_bars: int = 6
+        tolerance_atr: float = 0.25
+        confirmation: Literal["close_back", "wick_reject"] = "close_back"
+
     mode: Literal["breakout", "baseline", "ema", "ema_macd", "ml_gate"] = "breakout"
     breakout_lookback_N: int = 72
     ema_fast_period: int = 12
@@ -70,6 +76,7 @@ class StrategyBreakoutSettings(BaseModel):
     ml_feature_selector: Literal["lightgbm", "xgboost"] = "lightgbm"
     ml_feature_top_k: int = 8
     trade_direction: Literal["both", "long", "short"] = "both"
+    retest: RetestSettings = Field(default_factory=RetestSettings)
 
 
 class RiskSettings(BaseModel):
@@ -89,12 +96,18 @@ class FrictionsSettings(BaseModel):
 
 
 class ExecutionSettings(BaseModel):
+    class DetailTimeframeSettings(BaseModel):
+        enabled: bool = False
+        timeframe: str = "15m"
+        policy: Literal["conservative", "optimistic"] = "conservative"
+
     margin_mode: Literal["isolated", "cross"] = "isolated"
     order_type: Literal["MARKET"] = "MARKET"
     use_testnet: bool = True
     api_key_env: str = "BINANCE_API_KEY"
     api_secret_env: str = "BINANCE_API_SECRET"
     dry_run: bool = True
+    detail_timeframe: DetailTimeframeSettings = Field(default_factory=DetailTimeframeSettings)
 
 
 class FeatureSettings(BaseModel):
@@ -107,11 +120,24 @@ class FeatureSettings(BaseModel):
 
 class FundingFilterSettings(BaseModel):
     enabled: bool = False
+    mode: Literal["gate", "score"] = "gate"
+    short_gate_threshold: float = 0.0
+    long_gate_threshold: float = 0.0
     z_window: int = 168
     z_abs_block: float = 2.0
     action: Literal["block", "reduce_size"] = "block"
     reduce_size_factor: float = 0.5
     apply_to: list[Literal["long", "short"]] = Field(default_factory=lambda: ["long", "short"])
+
+
+class RiskFngSettings(BaseModel):
+    enabled: bool = False
+    path: str = ""
+    low_threshold: int = 25
+    high_threshold: int = 75
+    mult_low: float = 0.5
+    mult_high: float = 0.75
+    apply_to: Literal["position_size", "risk_per_trade"] = "risk_per_trade"
 
 
 class MultiTimeframeSettings(BaseModel):
@@ -142,6 +168,7 @@ class Settings(BaseModel):
     features: FeatureSettings = Field(default_factory=FeatureSettings)
     regime: RegimeSettings = Field(default_factory=RegimeSettings)
     funding_filter: FundingFilterSettings = Field(default_factory=FundingFilterSettings)
+    risk_fng: RiskFngSettings = Field(default_factory=RiskFngSettings)
     multi_timeframe: MultiTimeframeSettings = Field(default_factory=MultiTimeframeSettings)
     time_exit: TimeExitSettings = Field(default_factory=TimeExitSettings)
     adaptive_trailing: AdaptiveTrailingSettings = Field(default_factory=AdaptiveTrailingSettings)

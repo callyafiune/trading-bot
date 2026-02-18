@@ -19,6 +19,7 @@ from bot.utils.config import Settings
 MIN_TRADE_COLUMNS = [
     "trade_id",
     "direction",
+    "entry_type",
     "entry_time",
     "entry_price",
     "exit_time",

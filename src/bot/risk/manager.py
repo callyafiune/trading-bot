@@ -28,8 +28,8 @@ class RiskManager:
             return entry * (1 - 1 / leverage)
         return entry * (1 + 1 / leverage)
 
-    def size_position(self, equity: float, entry: float, stop: float, side: str) -> PositionSizeResult:
-        risk_amount = equity * self.settings.risk_per_trade
+    def size_position(self, equity: float, entry: float, stop: float, side: str, risk_multiplier: float = 1.0) -> PositionSizeResult:
+        risk_amount = equity * self.settings.risk_per_trade * max(0.0, risk_multiplier)
         stop_dist = abs(entry - stop)
         if stop_dist <= 0:
             return PositionSizeResult(0, 0, False, "invalid_stop")

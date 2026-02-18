@@ -85,3 +85,29 @@ def save_parquet(df: pd.DataFrame, raw_path: Path, processed_path: Path, interva
 
 def load_parquet(path: str | Path) -> pd.DataFrame:
     return pd.read_parquet(path)
+
+
+def derive_detail_data_path(data_path: str | Path, detail_timeframe: str) -> Path | None:
+    p = Path(data_path)
+    token = "_1h_"
+    tf_token = f"_{detail_timeframe}_"
+    if token not in p.name:
+        return None
+    return p.with_name(p.name.replace(token, tf_token, 1))
+
+
+def merge_fng_with_ohlcv(ohlcv: pd.DataFrame, fng_1d: pd.DataFrame) -> pd.DataFrame:
+    if ohlcv.empty:
+        return ohlcv.copy()
+    if fng_1d.empty:
+        out = ohlcv.copy()
+        out["fng_value"] = pd.NA
+        return out
+
+    fng = fng_1d.copy()
+    if "timestamp" in fng.columns and "open_time" not in fng.columns:
+        fng = fng.rename(columns={"timestamp": "open_time"})
+    fng = fng.sort_values("open_time")
+    out = ohlcv.sort_values("open_time").merge(fng[["open_time", "fng_value"]], on="open_time", how="left")
+    out["fng_value"] = out["fng_value"].ffill()
+    return out

@@ -19,6 +19,7 @@ class SummaryCounts(BaseModel):
     blocked_range_flat: int = 0
     blocked_cooldown: int = 0
     blocked_mtf: int = 0
+    blocked_funding_count: int = 0
 
 
 class BacktestSummary(BaseModel):
@@ -55,9 +56,19 @@ class BacktestSummary(BaseModel):
     blocked_range_flat: int = 0
     blocked_cooldown: int = 0
     mtf_enabled: bool = False
+    detail_timeframe_enabled: bool = False
+    detail_timeframe: str | None = None
+    detail_policy: str | None = None
     time_exit_triggered: int = 0
     adaptive_trailing_triggered: int = 0
     adaptive_trailing_stop_hits: int = 0
+    biggest_winner_pct: float = 0.0
+    worst_loser_pct: float = 0.0
+    max_trade_R: float = 0.0
+    entry_direct_count: int = 0
+    entry_retest_count: int = 0
+    direction_buckets: dict[str, dict[str, float | int]] = Field(default_factory=dict)
+    regime_buckets: dict[str, dict[str, float | int]] = Field(default_factory=dict)
     counts: SummaryCounts = Field(default_factory=SummaryCounts)
 
 
