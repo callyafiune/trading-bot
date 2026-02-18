@@ -59,6 +59,13 @@ strategy_router:
   enable_range: false
   enable_chaos: false
   short_use_ma200_filter: false
+  bull_slope_min: 0.0
+  cooldown_bars_after_exit: 6
+  overrides:
+    bull_trend:
+      breakout_N: 120
+    bear_trend:
+      breakout_N: 72
 risk:
   account_equity_usdt: 10000
   risk_per_trade: 0.005

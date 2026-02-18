@@ -40,6 +40,7 @@ class BacktestEngine:
         position: Position | None = None
         intent: Signal | None = None
         intent_idx: int | None = None
+        cooldown_until_idx: dict[str, int] = {"LONG": -1, "SHORT": -1}
 
         diagnostics: dict[str, int | float | str | None] = {
             "signals_total": 0,
@@ -56,6 +57,7 @@ class BacktestEngine:
             "blocked_macro": 0,
             "blocked_micro": 0,
             "blocked_chaos": 0,
+            "blocked_cooldown": 0,
         }
 
         day_anchor: pd.Timestamp | None = None
@@ -153,6 +155,8 @@ class BacktestEngine:
                         }
                     )
                     trade_id_seq += 1
+                    cooldown_bars = max(0, int(self.settings.strategy_router.cooldown_bars_after_exit))
+                    cooldown_until_idx[position.side] = i + cooldown_bars
                     position = None
                 else:
                     position.stop = self.strategy.trailing_stop(position.side, position.stop, float(row["close"]), float(row["atr_14"]))
@@ -199,6 +203,8 @@ class BacktestEngine:
                 if sig:
                     if kill_day or kill_week:
                         diagnostics["signals_blocked_killswitch"] += 1
+                    elif i <= cooldown_until_idx.get(sig.side, -1):
+                        diagnostics["blocked_cooldown"] += 1
                     else:
                         intent = sig
                         intent_idx = i

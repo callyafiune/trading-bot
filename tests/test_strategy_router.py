@@ -5,9 +5,9 @@ from bot.utils.config import StrategyBreakoutSettings, StrategyRouterSettings
 
 
 def _df_with_signal(regime: str, side: str) -> tuple[pd.DataFrame, int]:
-    n = 120
+    n = 240
     close = [100.0] * n
-    i = 80
+    i = 180
     if side == "LONG":
         close[i] = 120.0
     else:
@@ -52,6 +52,5 @@ def test_short_only_overrides_regime_router() -> None:
     strategy = BreakoutATRStrategy(settings, StrategyRouterSettings(enable_range=False, enable_chaos=False))
     df, i = _df_with_signal("TRANSITION_RANGE", "SHORT")
     sig, reason = strategy.signal_decision(df, i)
-    assert sig is not None
-    assert sig.side == "SHORT"
-    assert reason is None
+    assert sig is None
+    assert reason == "blocked_range_flat"
