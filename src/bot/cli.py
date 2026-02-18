@@ -19,7 +19,7 @@ from bot.backtest.reporting import print_summary
 from bot.execution.broker_binance import BrokerBinance
 from bot.features.builder import build_features
 from bot.market_data.binance_client import BinanceDataClient
-from bot.market_data.loader import load_parquet, merge_ohlcv_with_funding, process_funding_to_1h, save_parquet
+from bot.market_data.loader import load_parquet, merge_ohlcv_with_funding, process_funding_to_1h, resample_ohlcv, save_parquet
 from bot.regime.detector import RegimeDetector
 from bot.runs.run_manager import RunManager
 from bot.runs.serializers import write_json
@@ -92,6 +92,10 @@ def _build_summary(
     summary["blocked_chaos"] = int(diagnostics.get("blocked_chaos", 0))
     summary["blocked_range_flat"] = int(diagnostics.get("blocked_by_regime_reason", {}).get("blocked_range_flat", 0))
     summary["blocked_cooldown"] = int(diagnostics.get("blocked_cooldown", 0))
+    summary["mtf_enabled"] = bool(diagnostics.get("mtf_enabled", False))
+    summary["time_exit_triggered"] = int(diagnostics.get("time_exit_triggered", 0))
+    summary["adaptive_trailing_triggered"] = int(diagnostics.get("adaptive_trailing_triggered", 0))
+    summary["adaptive_trailing_stop_hits"] = int(diagnostics.get("adaptive_trailing_stop_hits", 0))
     summary["counts"] = {
         "signals_total": int(diagnostics.get("signals_total", 0)),
         "entries_executed": int(diagnostics.get("entries_executed", 0)),
@@ -107,8 +111,27 @@ def _build_summary(
         "blocked_chaos": int(diagnostics.get("blocked_chaos", 0)),
         "blocked_range_flat": int(diagnostics.get("blocked_by_regime_reason", {}).get("blocked_range_flat", 0)),
         "blocked_cooldown": int(diagnostics.get("blocked_cooldown", 0)),
+        "blocked_mtf": int(diagnostics.get("blocked_mtf", 0)),
     }
     return summary
+
+
+def _attach_mtf_features(df_1h: pd.DataFrame, cfg: Settings) -> pd.DataFrame:
+    if not cfg.multi_timeframe.enabled:
+        return df_1h
+    if cfg.multi_timeframe.timeframe.lower() != "4h":
+        raise typer.BadParameter("Apenas timeframe 4h é suportado em multi_timeframe.timeframe no momento.")
+
+    df_4h = resample_ohlcv(df_1h, "4h")
+    ema_period = int(cfg.multi_timeframe.ma_period)
+    df_4h["ema_200_4h"] = df_4h["close"].ewm(span=ema_period, adjust=False, min_periods=ema_period).mean()
+    df_4h["ema_slope_4h"] = df_4h["ema_200_4h"].diff()
+
+    mtf = df_4h[["open_time", "close", "ema_200_4h", "ema_slope_4h"]].rename(columns={"close": "close_4h"})
+    mtf = mtf.set_index("open_time").shift(1)
+    aligned = mtf.reindex(df_1h.set_index("open_time").index, method="ffill")
+    aligned = aligned.reset_index()
+    return df_1h.merge(aligned, on="open_time", how="left")
 
 
 def _build_regime_stats(df: pd.DataFrame, trades: pd.DataFrame) -> dict[str, Any]:
@@ -171,6 +194,7 @@ def _execute_backtest(
         f" | fim={df['open_time'].max()}"
     )
 
+    df = _attach_mtf_features(df, cfg)
     df = build_features(df, cfg.features)
     df["regime"] = RegimeDetector(cfg.regime).apply(df)
     trend_up = int(df["regime"].astype(str).str.startswith("BULL").sum())
@@ -199,6 +223,7 @@ def _execute_backtest(
     engine.last_run_diagnostics["regime_switch_count_macro"] = int(df.get("regime_switch_macro", pd.Series(dtype=bool)).sum())
     engine.last_run_diagnostics["regime_switch_count_micro"] = int(df.get("regime_switch_micro", pd.Series(dtype=bool)).sum())
     engine.last_run_diagnostics["regime_switch_count_total"] = int(df.get("regime_switch_total", pd.Series(dtype=bool)).sum())
+    engine.last_run_diagnostics["mtf_enabled"] = bool(cfg.multi_timeframe.enabled)
 
     metrics = compute_metrics(trades, equity)
     summary = _build_summary(trades, equity, metrics, engine.last_run_diagnostics)
@@ -253,6 +278,7 @@ def backtest(
     adx_threshold: float | None = typer.Option(None, "--adx-threshold"),
     funding_path: str | None = typer.Option(None, "--funding-path"),
     use_ma200_filter: bool | None = typer.Option(None, "--use-ma200-filter/--no-use-ma200-filter"),
+    use_mtf: bool | None = typer.Option(None, "--enable-mtf/--disable-mtf"),
     ml_threshold: float | None = typer.Option(None, "--ml-threshold"),
     long_only: bool = typer.Option(False, "--long-only"),
     short_only: bool = typer.Option(False, "--short-only"),
@@ -271,6 +297,8 @@ def backtest(
         cfg.regime.adx_trend_threshold = adx_threshold
     if use_ma200_filter is not None:
         cfg.strategy_breakout.use_ma200_filter = use_ma200_filter
+    if use_mtf is not None:
+        cfg.multi_timeframe.enabled = use_mtf
     if ml_threshold is not None:
         cfg.strategy_breakout.ml_prob_threshold = ml_threshold
     if long_only and short_only:
@@ -303,13 +331,15 @@ def backtest(
 @app.command("compare")
 def compare(
     runs: list[str] = typer.Option(..., "--runs"),
+    extra_runs: list[str] = typer.Argument([]),
     save_path: str | None = typer.Option(None, "--save-path"),
 ):
-    if len(runs) < 2:
+    all_runs = [*runs, *(extra_runs or [])]
+    if len(all_runs) < 2:
         raise typer.BadParameter("Informe ao menos duas runs em --runs")
 
     summaries: list[tuple[str, dict[str, Any]]] = []
-    for run in runs:
+    for run in all_runs:
         summary_path = Path(run) / "summary.json"
         if not summary_path.exists():
             raise typer.BadParameter(f"summary.json não encontrado em {run}")
@@ -333,7 +363,7 @@ def compare(
     table.add_column("run")
     for metric in metrics:
         table.add_column(metric)
-        table.add_column(f"Δ {metric}")
+        table.add_column(f"delta_{metric}")
 
     compare_payload: dict[str, Any] = {"base_run": base_name, "results": []}
 

@@ -114,6 +114,26 @@ class FundingFilterSettings(BaseModel):
     apply_to: list[Literal["long", "short"]] = Field(default_factory=lambda: ["long", "short"])
 
 
+class MultiTimeframeSettings(BaseModel):
+    enabled: bool = False
+    timeframe: str = "4h"
+    ma_period: int = 200
+    require_trend_alignment: bool = True
+
+
+class TimeExitSettings(BaseModel):
+    enabled: bool = False
+    max_holding_hours: int = 24
+    soft_exit_hours: int = 12
+    min_r_multiple_after_soft: float = 1.0
+
+
+class AdaptiveTrailingSettings(BaseModel):
+    enabled: bool = False
+    activate_after_R: float = 1.5
+    trailing_atr_multiplier: float = 1.5
+
+
 class Settings(BaseModel):
     symbol: str = "BTCUSDT"
     interval: str = "1h"
@@ -122,6 +142,9 @@ class Settings(BaseModel):
     features: FeatureSettings = Field(default_factory=FeatureSettings)
     regime: RegimeSettings = Field(default_factory=RegimeSettings)
     funding_filter: FundingFilterSettings = Field(default_factory=FundingFilterSettings)
+    multi_timeframe: MultiTimeframeSettings = Field(default_factory=MultiTimeframeSettings)
+    time_exit: TimeExitSettings = Field(default_factory=TimeExitSettings)
+    adaptive_trailing: AdaptiveTrailingSettings = Field(default_factory=AdaptiveTrailingSettings)
     strategy_breakout: StrategyBreakoutSettings = Field(default_factory=StrategyBreakoutSettings)
     strategy_router: StrategyRouterSettings = Field(default_factory=StrategyRouterSettings)
     risk: RiskSettings = Field(default_factory=RiskSettings)

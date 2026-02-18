@@ -6,7 +6,7 @@ from typing import Literal
 import numpy as np
 import pandas as pd
 
-from bot.utils.config import FundingFilterSettings, StrategyBreakoutSettings, StrategyRouterSettings
+from bot.utils.config import FundingFilterSettings, MultiTimeframeSettings, StrategyBreakoutSettings, StrategyRouterSettings
 
 try:
     from xgboost import XGBClassifier
@@ -36,10 +36,12 @@ class BreakoutATRStrategy:
         settings: StrategyBreakoutSettings,
         router_settings: StrategyRouterSettings | None = None,
         funding_filter: FundingFilterSettings | None = None,
+        mtf_settings: MultiTimeframeSettings | None = None,
     ) -> None:
         self.settings = settings
         self.router_settings = router_settings or StrategyRouterSettings()
         self.funding_filter = funding_filter or FundingFilterSettings()
+        self.mtf_settings = mtf_settings or MultiTimeframeSettings()
         self.ml_probabilities = pd.Series(dtype=float)
         self.ml_threshold_by_index: dict[int, float] = {}
         self.selected_features: list[str] = []
@@ -197,6 +199,10 @@ class BreakoutATRStrategy:
         ma_block = self._ma200_filter_reason(row, raw_signal)
         if ma_block:
             return SignalDecision(signal=None, blocked_reason=ma_block, raw_signal=raw_signal)
+
+        mtf_block = self._mtf_filter_reason(row, raw_signal)
+        if mtf_block:
+            return SignalDecision(signal=None, blocked_reason=mtf_block, raw_signal=raw_signal)
 
         return SignalDecision(signal=raw_signal, blocked_reason=None, raw_signal=raw_signal)
 
@@ -362,6 +368,32 @@ class BreakoutATRStrategy:
         if close < prev_low:
             return Signal(side="SHORT", reason="breakout_low"), None
         return None, "no_breakout"
+
+    def _mtf_filter_reason(self, row: pd.Series, signal: Signal) -> str | None:
+        if not self.mtf_settings.enabled or not self.mtf_settings.require_trend_alignment:
+            return None
+
+        regime = str(row.get("regime", ""))
+        close_4h = row.get("close_4h", np.nan)
+        ema_4h = row.get("ema_200_4h", np.nan)
+        slope_4h = row.get("ema_slope_4h", np.nan)
+        if pd.isna(close_4h) or pd.isna(ema_4h) or pd.isna(slope_4h):
+            return "mtf"
+
+        if signal.side == "SHORT":
+            if regime != "BEAR_TREND":
+                return "mtf"
+            if not (close_4h < ema_4h and slope_4h < 0):
+                return "mtf"
+            return None
+
+        if signal.side == "LONG":
+            if regime != "BULL_TREND":
+                return "mtf"
+            if not (close_4h > ema_4h and slope_4h > 0):
+                return "mtf"
+            return None
+        return "mtf"
 
     def _ema_signal(self, df: pd.DataFrame, i: int) -> tuple[Signal | None, str | None]:
         prev = df.iloc[i - 1]

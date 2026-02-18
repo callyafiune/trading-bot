@@ -7,6 +7,30 @@ import pandas as pd
 from bot.market_data.binance_client import INTERVAL_MS
 
 
+def resample_ohlcv(df: pd.DataFrame, timeframe: str) -> pd.DataFrame:
+    if df.empty:
+        return df.copy()
+    if timeframe.lower() != "4h":
+        raise ValueError(f"timeframe não suportado para resample_ohlcv: {timeframe}")
+
+    base = df.sort_values("open_time").set_index("open_time")
+    agg = (
+        base.resample("4h", label="left", closed="left")
+        .agg(
+            {
+                "open": "first",
+                "high": "max",
+                "low": "min",
+                "close": "last",
+                "volume": "sum",
+            }
+        )
+        .dropna(subset=["open", "high", "low", "close"])
+        .reset_index()
+    )
+    return agg
+
+
 def enforce_continuous_candles(df: pd.DataFrame, interval: str) -> pd.DataFrame:
     if df.empty:
         return df
