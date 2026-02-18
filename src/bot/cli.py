@@ -258,6 +258,8 @@ def _execute_backtest(
     fng_path: str | None = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame, dict[str, Any], dict[str, Any], dict[str, Any]]:
     df = load_parquet(data_path)
+    if funding_path and not cfg.funding_filter.enabled:
+        cfg.funding_filter.enabled = True
     if cfg.funding_filter.enabled and funding_path is None:
         data_name = Path(data_path).name
         if data_name.startswith("BTCUSDT_1h_"):
@@ -418,6 +420,7 @@ def backtest(
     retest_window: int | None = typer.Option(None, "--retest-window"),
     retest_tolerance_atr: float | None = typer.Option(None, "--retest-tolerance-atr"),
     use_ma200_filter: bool | None = typer.Option(None, "--use-ma200-filter/--no-use-ma200-filter"),
+    use_range: bool | None = typer.Option(None, "--enable-range/--disable-range"),
     use_mtf: bool | None = typer.Option(None, "--enable-mtf/--disable-mtf"),
     fng_path: str | None = typer.Option(None, "--fng-path"),
     disable_router: bool = typer.Option(False, "--disable-router"),
@@ -439,6 +442,8 @@ def backtest(
         cfg.regime.adx_trend_threshold = adx_threshold
     if use_ma200_filter is not None:
         cfg.strategy_breakout.use_ma200_filter = use_ma200_filter
+    if use_range is not None:
+        cfg.strategy_router.enable_range = use_range
     if use_mtf is not None:
         cfg.multi_timeframe.enabled = use_mtf
     if disable_router:

@@ -253,9 +253,7 @@ class BreakoutATRStrategy:
             return None if self.router_settings.enable_chaos else "blocked_chaos_flat"
 
         if micro == "RANGE":
-            if not self.router_policy.enabled:
-                return "blocked_range_flat"
-            if self.router_policy.range_mode == "breakout" and not self.router_settings.enable_range:
+            if not self.router_settings.enable_range:
                 return "blocked_range_flat"
 
         if self.settings.trade_direction == "long":
@@ -412,21 +410,19 @@ class BreakoutATRStrategy:
             return retest_sig, None
 
         if close > prev_high:
-            if not self.settings.retest.enabled:
-                return Signal(side="LONG", reason="breakout_high", entry_type="direct"), None
-            self.pending_retest["LONG"] = {
-                "level": float(prev_high),
-                "expires_idx": int(i + self.settings.retest.window_bars),
-            }
-            return None, "retest_wait"
+            if self.settings.retest.enabled:
+                self.pending_retest["LONG"] = {
+                    "level": float(prev_high),
+                    "expires_idx": int(i + self.settings.retest.window_bars),
+                }
+            return Signal(side="LONG", reason="breakout_high", entry_type="direct"), None
         if close < prev_low:
-            if not self.settings.retest.enabled:
-                return Signal(side="SHORT", reason="breakout_low", entry_type="direct"), None
-            self.pending_retest["SHORT"] = {
-                "level": float(prev_low),
-                "expires_idx": int(i + self.settings.retest.window_bars),
-            }
-            return None, "retest_wait"
+            if self.settings.retest.enabled:
+                self.pending_retest["SHORT"] = {
+                    "level": float(prev_low),
+                    "expires_idx": int(i + self.settings.retest.window_bars),
+                }
+            return Signal(side="SHORT", reason="breakout_low", entry_type="direct"), None
         return None, "no_breakout"
 
     def _maybe_retest_signal(self, df: pd.DataFrame, i: int) -> Signal | None:

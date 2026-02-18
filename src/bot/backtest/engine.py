@@ -306,6 +306,11 @@ class BacktestEngine:
                 )
                 if size.valid and size.qty > 0:
                     qty = size.qty
+                    if self.settings.strategy_breakout.retest.enabled:
+                        if intent.entry_type == "retest":
+                            qty *= max(0.0, float(self.settings.strategy_breakout.retest.retest_size_multiplier))
+                        else:
+                            qty *= max(0.0, float(self.settings.strategy_breakout.retest.direct_size_multiplier))
                     if qty <= 0:
                         diagnostics["signals_blocked_risk"] += 1
                         intent = None

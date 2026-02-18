@@ -60,6 +60,8 @@ class StrategyBreakoutSettings(BaseModel):
         window_bars: int = 6
         tolerance_atr: float = 0.25
         confirmation: Literal["close_back", "wick_reject"] = "close_back"
+        direct_size_multiplier: float = 0.75
+        retest_size_multiplier: float = 1.0
 
     mode: Literal["breakout", "baseline", "ema", "ema_macd", "ml_gate"] = "breakout"
     breakout_lookback_N: int = 72
