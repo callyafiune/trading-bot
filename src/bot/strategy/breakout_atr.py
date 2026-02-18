@@ -6,7 +6,7 @@ from typing import Literal
 import numpy as np
 import pandas as pd
 
-from bot.utils.config import StrategyBreakoutSettings, StrategyRouterSettings
+from bot.utils.config import FundingFilterSettings, StrategyBreakoutSettings, StrategyRouterSettings
 
 try:
     from xgboost import XGBClassifier
@@ -31,15 +31,49 @@ class SignalDecision:
 
 
 class BreakoutATRStrategy:
-    def __init__(self, settings: StrategyBreakoutSettings, router_settings: StrategyRouterSettings | None = None) -> None:
+    def __init__(
+        self,
+        settings: StrategyBreakoutSettings,
+        router_settings: StrategyRouterSettings | None = None,
+        funding_filter: FundingFilterSettings | None = None,
+    ) -> None:
         self.settings = settings
         self.router_settings = router_settings or StrategyRouterSettings()
+        self.funding_filter = funding_filter or FundingFilterSettings()
         self.ml_probabilities = pd.Series(dtype=float)
         self.ml_threshold_by_index: dict[int, float] = {}
         self.selected_features: list[str] = []
 
+    def _attach_funding_features(self, out: pd.DataFrame) -> pd.DataFrame:
+        out = out.copy()
+        out["funding_action"] = "none"
+        if "funding_rate" not in out.columns:
+            return out
+
+        window = max(2, self.funding_filter.z_window)
+        mean = out["funding_rate"].rolling(window, min_periods=window).mean()
+        std = out["funding_rate"].rolling(window, min_periods=window).std(ddof=0).replace(0.0, np.nan)
+        out["funding_z"] = (out["funding_rate"] - mean) / std
+
+        if not self.funding_filter.enabled:
+            return out
+
+        long_block = out["funding_z"] > self.funding_filter.z_abs_block
+        short_block = out["funding_z"] < -self.funding_filter.z_abs_block
+        if "long" not in self.funding_filter.apply_to:
+            long_block = pd.Series(False, index=out.index)
+        if "short" not in self.funding_filter.apply_to:
+            short_block = pd.Series(False, index=out.index)
+
+        if self.funding_filter.action == "block":
+            out.loc[long_block, "funding_action"] = "block_long"
+            out.loc[short_block, "funding_action"] = "block_short"
+        else:
+            out.loc[long_block | short_block, "funding_action"] = "reduce_size"
+        return out
+
     def prepare(self, df: pd.DataFrame) -> pd.DataFrame:
-        out = df.copy()
+        out = self._attach_funding_features(df.copy())
         if self.settings.mode != "ml_gate":
             return out
 
@@ -152,6 +186,10 @@ class BreakoutATRStrategy:
         if regime_block:
             return SignalDecision(signal=None, blocked_reason=regime_block, raw_signal=raw_signal)
 
+        funding_block = self._funding_filter_reason(row, raw_signal)
+        if funding_block:
+            return SignalDecision(signal=None, blocked_reason=funding_block, raw_signal=raw_signal)
+
         mode_block = self._mode_filter_reason(df, i, raw_signal)
         if mode_block:
             return SignalDecision(signal=None, blocked_reason=mode_block, raw_signal=raw_signal)
@@ -173,19 +211,44 @@ class BreakoutATRStrategy:
             return "direction" if signal.side == "LONG" else None
 
         regime = str(row.get("regime", ""))
+        macro = regime.split("_")[0] if "_" in regime else regime
+        micro = regime.split("_")[-1] if "_" in regime else regime
+
         if regime == "TREND_UP":
+            macro, micro = "BULL", "TREND"
+        elif regime == "TREND_DOWN":
+            macro, micro = "BEAR", "TREND"
+        elif regime == "RANGE":
+            macro, micro = "TRANSITION", "RANGE"
+        elif regime == "CHAOS":
+            macro, micro = "TRANSITION", "CHAOS"
+
+        if micro == "CHAOS":
+            return None if self.router_settings.enable_chaos else "blocked_chaos_flat"
+
+        if macro == "BULL":
             if not self.router_settings.enable_trend_up_long:
                 return "blocked_trend_up_flat"
             return "blocked_trend_up_short_only" if signal.side == "SHORT" else None
-        if regime == "TREND_DOWN":
+        if macro == "BEAR":
             if not self.router_settings.enable_trend_down_short:
                 return "blocked_trend_down_flat"
             return "blocked_trend_down_long_only" if signal.side == "LONG" else None
-        if regime == "RANGE":
+        if micro == "RANGE":
             return None if self.router_settings.enable_range else "blocked_range_flat"
-        if regime == "CHAOS":
-            return None if self.router_settings.enable_chaos else "blocked_chaos_flat"
+        if micro == "TREND":
+            return None
         return "blocked_regime_unknown"
+
+    def _funding_filter_reason(self, row: pd.Series, signal: Signal) -> str | None:
+        action = str(row.get("funding_action", "none"))
+        if action == "none" or action == "reduce_size":
+            return None
+        if action == "block_long" and signal.side == "LONG":
+            return "funding"
+        if action == "block_short" and signal.side == "SHORT":
+            return "funding"
+        return None
 
     def _raw_signal_by_mode(self, df: pd.DataFrame, i: int) -> tuple[Signal | None, str | None]:
         if self.settings.mode in ("breakout", "baseline"):

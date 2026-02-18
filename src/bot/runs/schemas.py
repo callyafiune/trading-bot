@@ -12,6 +12,10 @@ class SummaryCounts(BaseModel):
     blocked_mode: int = 0
     blocked_ma200: int = 0
     killswitch_events: int = 0
+    blocked_funding: int = 0
+    blocked_macro: int = 0
+    blocked_micro: int = 0
+    blocked_chaos: int = 0
 
 
 class BacktestSummary(BaseModel):
@@ -35,7 +39,16 @@ class BacktestSummary(BaseModel):
     pnl_short: float = 0.0
     trades_by_regime: dict[str, int] = Field(default_factory=dict)
     pnl_by_regime: dict[str, float] = Field(default_factory=dict)
+    trades_by_regime_final: dict[str, int] = Field(default_factory=dict)
+    pnl_by_regime_final: dict[str, float] = Field(default_factory=dict)
     blocked_by_regime_reason: dict[str, int] = Field(default_factory=dict)
+    regime_switch_count_macro: int = 0
+    regime_switch_count_micro: int = 0
+    regime_switch_count_total: int = 0
+    blocked_funding: int = 0
+    blocked_macro: int = 0
+    blocked_micro: int = 0
+    blocked_chaos: int = 0
     counts: SummaryCounts = Field(default_factory=SummaryCounts)
 
 

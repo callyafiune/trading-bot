@@ -19,7 +19,7 @@ from bot.backtest.reporting import print_summary
 from bot.execution.broker_binance import BrokerBinance
 from bot.features.builder import build_features
 from bot.market_data.binance_client import BinanceDataClient
-from bot.market_data.loader import load_parquet, save_parquet
+from bot.market_data.loader import load_parquet, merge_ohlcv_with_funding, process_funding_to_1h, save_parquet
 from bot.regime.detector import RegimeDetector
 from bot.runs.run_manager import RunManager
 from bot.runs.serializers import write_json
@@ -77,7 +77,16 @@ def _build_summary(
     summary["pnl_short"] = float(trades.loc[trades["direction"] == "SHORT", "pnl_net"].sum()) if not trades.empty else 0.0
     summary["trades_by_regime"] = trades.groupby("regime_at_entry").size().astype(int).to_dict() if not trades.empty else {}
     summary["pnl_by_regime"] = trades.groupby("regime_at_entry")["pnl_net"].sum().astype(float).to_dict() if not trades.empty else {}
+    summary["trades_by_regime_final"] = summary["trades_by_regime"]
+    summary["pnl_by_regime_final"] = summary["pnl_by_regime"]
     summary["blocked_by_regime_reason"] = diagnostics.get("blocked_by_regime_reason", {})
+    summary["regime_switch_count_macro"] = int(diagnostics.get("regime_switch_count_macro", 0))
+    summary["regime_switch_count_micro"] = int(diagnostics.get("regime_switch_count_micro", 0))
+    summary["regime_switch_count_total"] = int(diagnostics.get("regime_switch_count_total", 0))
+    summary["blocked_funding"] = int(diagnostics.get("blocked_funding", 0))
+    summary["blocked_macro"] = int(diagnostics.get("blocked_macro", 0))
+    summary["blocked_micro"] = int(diagnostics.get("blocked_micro", 0))
+    summary["blocked_chaos"] = int(diagnostics.get("blocked_chaos", 0))
     summary["counts"] = {
         "signals_total": int(diagnostics.get("signals_total", 0)),
         "entries_executed": int(diagnostics.get("entries_executed", 0)),
@@ -87,30 +96,36 @@ def _build_summary(
         "blocked_mode": int(diagnostics.get("signals_blocked_mode", 0)),
         "blocked_ma200": int(diagnostics.get("signals_blocked_ma200", 0)),
         "killswitch_events": int(diagnostics.get("killswitch_events", 0)),
+        "blocked_funding": int(diagnostics.get("blocked_funding", 0)),
+        "blocked_macro": int(diagnostics.get("blocked_macro", 0)),
+        "blocked_micro": int(diagnostics.get("blocked_micro", 0)),
+        "blocked_chaos": int(diagnostics.get("blocked_chaos", 0)),
     }
     return summary
 
 
 def _build_regime_stats(df: pd.DataFrame, trades: pd.DataFrame) -> dict[str, Any]:
-    regimes = ["TREND_UP", "TREND_DOWN", "RANGE", "CHAOS"]
     total_candles = len(df)
+    regimes = sorted(df["regime"].dropna().astype(str).unique().tolist()) if "regime" in df.columns else []
     result: dict[str, Any] = {}
 
     for regime in regimes:
-        candles_count = int((df["regime"] == regime).sum()) if "regime" in df.columns else 0
+        candles_count = int((df["regime"] == regime).sum())
         regime_trades = trades.loc[trades["regime_at_entry"] == regime] if not trades.empty else pd.DataFrame()
         trades_count = int(len(regime_trades))
         pnl_total = float(regime_trades["pnl_net"].sum()) if trades_count else 0.0
-        win_rate = float((regime_trades["pnl_net"] > 0).mean()) if trades_count else 0.0
-        avg_pnl = float(regime_trades["pnl_net"].mean()) if trades_count else 0.0
         result[regime] = {
             "candles_count": candles_count,
             "pct_time": float(candles_count / total_candles) if total_candles else 0.0,
             "trades_count": trades_count,
             "pnl_net_total": pnl_total,
-            "avg_pnl": avg_pnl,
-            "win_rate": win_rate,
         }
+
+    result["switches"] = {
+        "macro": int(df.get("regime_switch_macro", pd.Series(dtype=bool)).sum()),
+        "micro": int(df.get("regime_switch_micro", pd.Series(dtype=bool)).sum()),
+        "total": int(df.get("regime_switch_total", pd.Series(dtype=bool)).sum()),
+    }
     return result
 
 
@@ -132,8 +147,12 @@ def _build_direction_stats(trades: pd.DataFrame) -> dict[str, Any]:
 def _execute_backtest(
     data_path: str,
     cfg: Settings,
+    funding_path: str | None = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame, dict[str, Any], dict[str, Any], dict[str, Any]]:
     df = load_parquet(data_path)
+    if funding_path:
+        funding_df = load_parquet(funding_path)
+        df = merge_ohlcv_with_funding(df, funding_df)
     if df.empty:
         print("[red]Dataset vazio. Verifique o arquivo de entrada.[/red]")
         raise typer.Exit(code=1)
@@ -145,12 +164,12 @@ def _execute_backtest(
         f" | fim={df['open_time'].max()}"
     )
 
-    df = build_features(df)
+    df = build_features(df, cfg.features)
     df["regime"] = RegimeDetector(cfg.regime).apply(df)
-    trend_up = int((df["regime"] == "TREND_UP").sum())
-    trend_down = int((df["regime"] == "TREND_DOWN").sum())
+    trend_up = int(df["regime"].astype(str).str.startswith("BULL").sum())
+    trend_down = int(df["regime"].astype(str).str.startswith("BEAR").sum())
     trend_pct = ((trend_up + trend_down) / len(df)) * 100 if len(df) else 0.0
-    print(f"[cyan]Regime:[/cyan] TREND_UP={trend_up} | TREND_DOWN={trend_down} ({trend_pct:.2f}% trend)")
+    print(f"[cyan]Regime:[/cyan] BULL={trend_up} | BEAR={trend_down} ({trend_pct:.2f}% macro trend)")
 
     engine = BacktestEngine(cfg)
     trades, equity = engine.run(df)
@@ -169,6 +188,10 @@ def _execute_backtest(
             f" | killswitch_events={diag.get('killswitch_events', 0)}"
             f" | first_killswitch_at={diag.get('first_killswitch_at')}"
         )
+
+    engine.last_run_diagnostics["regime_switch_count_macro"] = int(df.get("regime_switch_macro", pd.Series(dtype=bool)).sum())
+    engine.last_run_diagnostics["regime_switch_count_micro"] = int(df.get("regime_switch_micro", pd.Series(dtype=bool)).sum())
+    engine.last_run_diagnostics["regime_switch_count_total"] = int(df.get("regime_switch_total", pd.Series(dtype=bool)).sum())
 
     metrics = compute_metrics(trades, equity)
     summary = _build_summary(trades, equity, metrics, engine.last_run_diagnostics)
@@ -189,6 +212,26 @@ def fetch_data(start: str = typer.Option(None), end: str = typer.Option(None), c
     print(f"Dados salvos em {raw_path} e {proc_path}")
 
 
+@app.command("fetch-funding")
+def fetch_funding(
+    start: str = typer.Option(..., "--start"),
+    end: str = typer.Option(..., "--end"),
+    symbol: str = typer.Option("BTCUSDT", "--symbol"),
+):
+    client = BinanceDataClient()
+    funding_df = client.fetch_funding_rate(symbol=symbol, start_date=start, end_date=end)
+
+    raw_path = Path(f"data/raw/funding/{symbol}_funding_{start}_{end}.parquet")
+    proc_path = Path(f"data/processed/funding_{symbol}_1h_{start}_{end}.parquet")
+    raw_path.parent.mkdir(parents=True, exist_ok=True)
+    proc_path.parent.mkdir(parents=True, exist_ok=True)
+
+    funding_df.to_parquet(raw_path, index=False)
+    funding_1h = process_funding_to_1h(funding_df, start, end)
+    funding_1h.to_parquet(proc_path, index=False)
+    print(f"Funding salvo em {raw_path} e {proc_path}")
+
+
 @app.command("backtest")
 def backtest(
     data_path: str = typer.Option(..., "--data-path"),
@@ -201,6 +244,7 @@ def backtest(
     atr_k: float | None = typer.Option(None, "--atr-k"),
     breakout_N: int | None = typer.Option(None, "--breakout-N"),
     adx_threshold: float | None = typer.Option(None, "--adx-threshold"),
+    funding_path: str | None = typer.Option(None, "--funding-path"),
     use_ma200_filter: bool | None = typer.Option(None, "--use-ma200-filter/--no-use-ma200-filter"),
     ml_threshold: float | None = typer.Option(None, "--ml-threshold"),
     long_only: bool = typer.Option(False, "--long-only"),
@@ -215,6 +259,8 @@ def backtest(
     if breakout_N is not None:
         cfg.strategy_breakout.breakout_lookback_N = breakout_N
     if adx_threshold is not None:
+        cfg.regime.adx_enter_threshold = adx_threshold
+        cfg.regime.adx_exit_threshold = max(10.0, adx_threshold - 4.0)
         cfg.regime.adx_trend_threshold = adx_threshold
     if use_ma200_filter is not None:
         cfg.strategy_breakout.use_ma200_filter = use_ma200_filter
@@ -234,7 +280,7 @@ def backtest(
         return
 
     manager.init_run(ctx, settings=cfg, data_path=data_path, config_path=config, seed=seed, tag=tag)
-    trades, equity, summary, regime_stats, direction_stats = _execute_backtest(data_path, cfg)
+    trades, equity, summary, regime_stats, direction_stats = _execute_backtest(data_path, cfg, funding_path=funding_path)
     manager.persist_outputs(
         ctx,
         summary=summary,
@@ -361,7 +407,7 @@ def paper(loop: bool = False, sleep: int = 60, data_path: str = typer.Option("")
             df = load_parquet(data_path)
         else:
             df = BinanceDataClient().fetch_ohlcv(cfg.symbol, cfg.interval, cfg.start_date, cfg.end_date)
-        df = build_features(df)
+        df = build_features(df, cfg.features)
         df["regime"] = RegimeDetector(cfg.regime).apply(df)
         trades, equity = BacktestEngine(cfg).run(df)
         last_equity = float(equity["equity"].iloc[-1]) if not equity.empty else cfg.risk.account_equity_usdt

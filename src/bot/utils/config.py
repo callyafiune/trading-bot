@@ -13,6 +13,12 @@ class RegimeSettings(BaseModel):
     chaos_vol_percentile: float = 0.9
     adx_period: int = 14
     adx_trend_threshold: float = 28
+    adx_enter_threshold: float = 28
+    adx_exit_threshold: float = 24
+    macro_slope_min: float = 0.0
+    macro_confirm_bars: int = 6
+    micro_confirm_bars: int = 3
+    chaos_vol_threshold: float = 0.03
     bb_period: int = 20
     bb_width_range_threshold: float = 0.06
     chaos_atr_pct_threshold: float = 0.03
@@ -77,12 +83,31 @@ class ExecutionSettings(BaseModel):
     dry_run: bool = True
 
 
+class FeatureSettings(BaseModel):
+    ema_fast: int = 50
+    ema_slow: int = 200
+    slope_window: int = 10
+    vol_window: int = 48
+    annualize_vol: bool = False
+
+
+class FundingFilterSettings(BaseModel):
+    enabled: bool = False
+    z_window: int = 168
+    z_abs_block: float = 2.0
+    action: Literal["block", "reduce_size"] = "block"
+    reduce_size_factor: float = 0.5
+    apply_to: list[Literal["long", "short"]] = Field(default_factory=lambda: ["long", "short"])
+
+
 class Settings(BaseModel):
     symbol: str = "BTCUSDT"
     interval: str = "1h"
     start_date: str
     end_date: str
+    features: FeatureSettings = Field(default_factory=FeatureSettings)
     regime: RegimeSettings = Field(default_factory=RegimeSettings)
+    funding_filter: FundingFilterSettings = Field(default_factory=FundingFilterSettings)
     strategy_breakout: StrategyBreakoutSettings = Field(default_factory=StrategyBreakoutSettings)
     strategy_router: StrategyRouterSettings = Field(default_factory=StrategyRouterSettings)
     risk: RiskSettings = Field(default_factory=RiskSettings)

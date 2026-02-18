@@ -10,7 +10,9 @@ def _regime_df() -> pd.DataFrame:
     return pd.DataFrame(
         {
             "close": close,
-            "ma_200": [100.0] * n,
+            "ema200": [100.0] * n,
+            "slope_ema200": [0.01] * n,
+            "vol_roll": [0.01] * n,
             "realized_vol_24": [0.01] * n,
             "atr_pct": [0.01] * n,
             "adx_14": [35.0] * n,
@@ -20,22 +22,24 @@ def _regime_df() -> pd.DataFrame:
 
 def test_regime_split_ma200() -> None:
     df = _regime_df()
-    detector = RegimeDetector(RegimeSettings(adx_trend_threshold=28))
+    detector = RegimeDetector(RegimeSettings(adx_trend_threshold=28, macro_confirm_bars=1, micro_confirm_bars=1, chaos_vol_threshold=1.0))
 
     df_up = df.copy()
-    df_up["close"] = df_up["ma_200"] + 1.0
+    df_up["close"] = df_up["ema200"] + 1.0
+    df_up["slope_ema200"] = 0.01
     out_up = detector.apply(df_up)
-    assert out_up.iloc[-1] == Regime.TREND_UP.value
+    assert out_up.iloc[-1].startswith("BULL")
 
     df_down = df.copy()
-    df_down["close"] = df_down["ma_200"] - 1.0
+    df_down["close"] = df_down["ema200"] - 1.0
+    df_down["slope_ema200"] = -0.01
     out_down = detector.apply(df_down)
-    assert out_down.iloc[-1] == Regime.TREND_DOWN.value
+    assert out_down.iloc[-1].startswith("BEAR")
 
 
 def test_no_lookahead() -> None:
     df = _regime_df()
-    detector = RegimeDetector(RegimeSettings(adx_trend_threshold=28, chaos_vol_percentile=0.8))
+    detector = RegimeDetector(RegimeSettings(adx_trend_threshold=28, chaos_vol_percentile=0.8, macro_confirm_bars=1, micro_confirm_bars=1))
 
     baseline = detector.apply(df)
     mutated = df.copy()

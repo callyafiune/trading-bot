@@ -3,7 +3,7 @@
 MVP funcional de bot BTCUSDT 1H para Binance com:
 - coleta de dados OHLCV
 - feature engineering determinístico
-- detector de regime (TREND/RANGE/CHAOS)
+- detector de regime em 2 camadas (macro + micro) com histerese anti-churn
 - estratégia baseline breakout + ATR
 - modos opcionais de sinal: `ema`, `ema_macd`, `ml_gate`
 - backtest com fricções realistas
@@ -39,9 +39,29 @@ Filtro direcional MA200 (sem lookahead):
 python -m bot fetch-data --start 2023-01-01 --end 2026-02-16
 ```
 
+
+## Baixar funding histórico (USDT-M perpetual)
+```bash
+python -m bot fetch-funding --start 2023-01-01 --end 2026-02-16 --symbol BTCUSDT
+```
+
+Artefatos gerados:
+- `data/raw/funding/BTCUSDT_funding_2023-01-01_2026-02-16.parquet`
+- `data/processed/funding_BTCUSDT_1h_2023-01-01_2026-02-16.parquet`
+
+O funding processado é alinhado para 1H com `forward-fill` seguro e flag de ausência.
+
 ## Rodar backtest com artefatos de run
 ```bash
 python -m bot backtest --data-path data/processed/BTCUSDT_1h_2023-01-01_2026-02-16.parquet --config config/settings.yaml
+```
+
+Backtest com funding e filtro habilitado (no YAML: `funding_filter.enabled: true`):
+```bash
+python -m bot backtest \
+  --data-path data/processed/BTCUSDT_1h_2023-01-01_2026-02-16.parquet \
+  --funding-path data/processed/funding_BTCUSDT_1h_2023-01-01_2026-02-16.parquet \
+  --config config/settings.yaml
 ```
 
 Também disponível:
@@ -139,3 +159,12 @@ python -m bot live --no-dry-run
 ```bash
 pytest -q
 ```
+
+
+## Métricas de regime e switches
+`summary.json` agora inclui:
+- `trades_by_regime_final` e `pnl_by_regime_final`
+- `regime_switch_count_macro`, `regime_switch_count_micro`, `regime_switch_count_total`
+- `blocked_funding`, `blocked_macro`, `blocked_micro`, `blocked_chaos`
+
+`regime_stats.json` inclui a distribuição dos regimes finais e contagem de switches.

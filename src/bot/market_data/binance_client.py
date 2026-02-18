@@ -8,6 +8,7 @@ import pandas as pd
 import requests
 
 BINANCE_BASE = "https://api.binance.com"
+BINANCE_FUTURES_BASE = "https://fapi.binance.com"
 
 INTERVAL_MS = {
     "1h": 60 * 60 * 1000,
@@ -22,6 +23,38 @@ class BinanceDataClient:
     def _to_ms(value: str) -> int:
         return int(datetime.fromisoformat(value).replace(tzinfo=timezone.utc).timestamp() * 1000)
 
+
+    def fetch_funding_rate(self, symbol: str, start_date: str, end_date: str, limit: int = 1000) -> pd.DataFrame:
+        start_ms = self._to_ms(start_date)
+        end_ms = self._to_ms(end_date)
+        rows: list[dict[str, Any]] = []
+
+        while start_ms < end_ms:
+            params = {
+                "symbol": symbol,
+                "startTime": start_ms,
+                "endTime": end_ms,
+                "limit": limit,
+            }
+            resp = self.session.get(f"{BINANCE_FUTURES_BASE}/fapi/v1/fundingRate", params=params, timeout=30)
+            resp.raise_for_status()
+            batch = resp.json()
+            if not batch:
+                break
+            rows.extend(batch)
+            last_ts = int(batch[-1]["fundingTime"])
+            start_ms = last_ts + 1
+            time.sleep(0.1)
+
+        if not rows:
+            return pd.DataFrame(columns=["funding_time", "funding_rate", "mark_price"])
+
+        df = pd.DataFrame(rows)
+        df["funding_time"] = pd.to_datetime(df["fundingTime"], unit="ms", utc=True)
+        df["funding_rate"] = df["fundingRate"].astype(float)
+        df["mark_price"] = pd.to_numeric(df.get("markPrice"), errors="coerce")
+        df = df[["funding_time", "funding_rate", "mark_price"]].sort_values("funding_time")
+        return df.reset_index(drop=True)
     def fetch_ohlcv(self, symbol: str, interval: str, start_date: str, end_date: str, limit: int = 1000) -> pd.DataFrame:
         start_ms = self._to_ms(start_date)
         end_ms = self._to_ms(end_date)
