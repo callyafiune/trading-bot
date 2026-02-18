@@ -79,6 +79,9 @@ def _build_summary(
     summary["pnl_by_regime"] = trades.groupby("regime_at_entry")["pnl_net"].sum().astype(float).to_dict() if not trades.empty else {}
     summary["trades_by_regime_final"] = summary["trades_by_regime"]
     summary["pnl_by_regime_final"] = summary["pnl_by_regime"]
+    for regime_name in ["BULL_RANGE", "BEAR_RANGE"]:
+        summary["trades_by_regime_final"].setdefault(regime_name, 0)
+        summary["pnl_by_regime_final"].setdefault(regime_name, 0.0)
     summary["blocked_by_regime_reason"] = diagnostics.get("blocked_by_regime_reason", {})
     summary["regime_switch_count_macro"] = int(diagnostics.get("regime_switch_count_macro", 0))
     summary["regime_switch_count_micro"] = int(diagnostics.get("regime_switch_count_micro", 0))
@@ -87,6 +90,8 @@ def _build_summary(
     summary["blocked_macro"] = int(diagnostics.get("blocked_macro", 0))
     summary["blocked_micro"] = int(diagnostics.get("blocked_micro", 0))
     summary["blocked_chaos"] = int(diagnostics.get("blocked_chaos", 0))
+    summary["blocked_range_flat"] = int(diagnostics.get("blocked_by_regime_reason", {}).get("blocked_range_flat", 0))
+    summary["blocked_cooldown"] = int(diagnostics.get("blocked_cooldown", 0))
     summary["counts"] = {
         "signals_total": int(diagnostics.get("signals_total", 0)),
         "entries_executed": int(diagnostics.get("entries_executed", 0)),
@@ -100,6 +105,8 @@ def _build_summary(
         "blocked_macro": int(diagnostics.get("blocked_macro", 0)),
         "blocked_micro": int(diagnostics.get("blocked_micro", 0)),
         "blocked_chaos": int(diagnostics.get("blocked_chaos", 0)),
+        "blocked_range_flat": int(diagnostics.get("blocked_by_regime_reason", {}).get("blocked_range_flat", 0)),
+        "blocked_cooldown": int(diagnostics.get("blocked_cooldown", 0)),
     }
     return summary
 

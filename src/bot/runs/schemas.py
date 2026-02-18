@@ -16,6 +16,8 @@ class SummaryCounts(BaseModel):
     blocked_macro: int = 0
     blocked_micro: int = 0
     blocked_chaos: int = 0
+    blocked_range_flat: int = 0
+    blocked_cooldown: int = 0
 
 
 class BacktestSummary(BaseModel):
@@ -49,6 +51,8 @@ class BacktestSummary(BaseModel):
     blocked_macro: int = 0
     blocked_micro: int = 0
     blocked_chaos: int = 0
+    blocked_range_flat: int = 0
+    blocked_cooldown: int = 0
     counts: SummaryCounts = Field(default_factory=SummaryCounts)
 
 

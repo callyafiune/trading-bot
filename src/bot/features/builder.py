@@ -80,6 +80,7 @@ def build_features(df: pd.DataFrame, settings: FeatureSettings | None = None) ->
     out["ema50"] = _ema(out["close"], settings.ema_fast)
     out["ema200"] = _ema(out["close"], settings.ema_slow)
     out["slope_ema200"] = (out["ema200"] / out["ema200"].shift(settings.slope_window)) - 1.0
+    out["slope_ema200_pct"] = out["slope_ema200"]
 
     log_ret_1 = np.log(out["close"]).diff()
     vol_roll = log_ret_1.rolling(settings.vol_window, min_periods=settings.vol_window).std()

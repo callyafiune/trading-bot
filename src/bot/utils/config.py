@@ -25,11 +25,25 @@ class RegimeSettings(BaseModel):
 
 
 class StrategyRouterSettings(BaseModel):
+    class RegimeOverride(BaseModel):
+        breakout_N: int
+
+    class RouterOverrides(BaseModel):
+        bull_trend: "StrategyRouterSettings.RegimeOverride" = Field(
+            default_factory=lambda: StrategyRouterSettings.RegimeOverride(breakout_N=120)
+        )
+        bear_trend: "StrategyRouterSettings.RegimeOverride" = Field(
+            default_factory=lambda: StrategyRouterSettings.RegimeOverride(breakout_N=72)
+        )
+
     enable_trend_up_long: bool = True
     enable_trend_down_short: bool = True
     enable_range: bool = False
     enable_chaos: bool = False
     short_use_ma200_filter: bool = False
+    bull_slope_min: float = 0.0
+    cooldown_bars_after_exit: int = 6
+    overrides: RouterOverrides = Field(default_factory=RouterOverrides)
 
 
 class StrategyBreakoutSettings(BaseModel):

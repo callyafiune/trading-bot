@@ -205,11 +205,6 @@ class BreakoutATRStrategy:
         return decision.signal, decision.blocked_reason
 
     def _router_block_reason(self, row: pd.Series, signal: Signal) -> str | None:
-        if self.settings.trade_direction == "long":
-            return "direction" if signal.side == "SHORT" else None
-        if self.settings.trade_direction == "short":
-            return "direction" if signal.side == "LONG" else None
-
         regime = str(row.get("regime", ""))
         macro = regime.split("_")[0] if "_" in regime else regime
         micro = regime.split("_")[-1] if "_" in regime else regime
@@ -226,19 +221,53 @@ class BreakoutATRStrategy:
         if micro == "CHAOS":
             return None if self.router_settings.enable_chaos else "blocked_chaos_flat"
 
+        if micro == "RANGE":
+            return "blocked_range_flat"
+
+        if self.settings.trade_direction == "long":
+            return "direction" if signal.side == "SHORT" else None
+        if self.settings.trade_direction == "short":
+            return "direction" if signal.side == "LONG" else None
+
         if macro == "BULL":
             if not self.router_settings.enable_trend_up_long:
                 return "blocked_trend_up_flat"
-            return "blocked_trend_up_short_only" if signal.side == "SHORT" else None
+            if signal.side == "SHORT":
+                return "blocked_trend_up_short_only"
+
+            if self.settings.mode not in ("breakout", "baseline"):
+                return None
+
+            close = row.get("close", np.nan)
+            ema200 = row.get("ema200", np.nan)
+            ema50 = row.get("ema50", np.nan)
+            slope_ema200_pct = row.get("slope_ema200_pct", row.get("slope_ema200", np.nan))
+            if pd.isna(close) or pd.isna(ema200) or pd.isna(ema50) or pd.isna(slope_ema200_pct):
+                return "blocked_trend_up_filter"
+            if close <= ema200 or ema50 <= ema200 or slope_ema200_pct < self.router_settings.bull_slope_min:
+                return "blocked_trend_up_filter"
+            return None
         if macro == "BEAR":
             if not self.router_settings.enable_trend_down_short:
                 return "blocked_trend_down_flat"
             return "blocked_trend_down_long_only" if signal.side == "LONG" else None
-        if micro == "RANGE":
-            return None if self.router_settings.enable_range else "blocked_range_flat"
         if micro == "TREND":
             return None
         return "blocked_regime_unknown"
+
+    def _breakout_lookback_for_row(self, row: pd.Series) -> int:
+        regime = str(row.get("regime", ""))
+        macro = regime.split("_")[0] if "_" in regime else regime
+        if regime == "TREND_UP":
+            macro = "BULL"
+        elif regime == "TREND_DOWN":
+            macro = "BEAR"
+
+        if macro == "BULL":
+            return max(1, int(self.router_settings.overrides.bull_trend.breakout_N))
+        if macro == "BEAR":
+            return max(1, int(self.router_settings.overrides.bear_trend.breakout_N))
+        return max(1, int(self.settings.breakout_lookback_N))
 
     def _funding_filter_reason(self, row: pd.Series, signal: Signal) -> str | None:
         action = str(row.get("funding_action", "none"))
@@ -252,9 +281,10 @@ class BreakoutATRStrategy:
 
     def _raw_signal_by_mode(self, df: pd.DataFrame, i: int) -> tuple[Signal | None, str | None]:
         if self.settings.mode in ("breakout", "baseline"):
-            if i < self.settings.breakout_lookback_N + 1:
+            lookback = self._breakout_lookback_for_row(df.iloc[i])
+            if i < lookback + 1:
                 return None, "warmup"
-            return self._breakout_signal(df, i)
+            return self._breakout_signal(df, i, lookback)
 
         if i < 1:
             return None, "warmup"
@@ -320,9 +350,9 @@ class BreakoutATRStrategy:
             return "ma200"
         return None
 
-    def _breakout_signal(self, df: pd.DataFrame, i: int) -> tuple[Signal | None, str | None]:
+    def _breakout_signal(self, df: pd.DataFrame, i: int, lookback_n: int) -> tuple[Signal | None, str | None]:
         row = df.iloc[i]
-        lookback = df.iloc[i - self.settings.breakout_lookback_N : i]
+        lookback = df.iloc[i - lookback_n : i]
         prev_high = lookback["high"].max()
         prev_low = lookback["low"].min()
         close = row["close"]
