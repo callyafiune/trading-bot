@@ -1,0 +1,123 @@
+symbol: BTCUSDT
+interval: 1h
+start_date: '2023-01-01'
+end_date: '2026-02-16'
+features:
+  ema_fast: 50
+  ema_slow: 200
+  slope_window: 10
+  vol_window: 48
+  annualize_vol: false
+regime:
+  vol_window_short: 24
+  vol_window_long: 168
+  chaos_vol_percentile: 0.9
+  adx_period: 14
+  adx_trend_threshold: 28
+  adx_enter_threshold: 28
+  adx_exit_threshold: 24
+  macro_slope_min: 0.0
+  macro_confirm_bars: 6
+  micro_confirm_bars: 3
+  chaos_vol_threshold: 0.03
+  bb_period: 20
+  bb_width_range_threshold: 0.06
+  chaos_atr_pct_threshold: 0.03
+funding_filter:
+  enabled: false
+  mode: gate
+  short_gate_threshold: 0.0
+  long_gate_threshold: 0.0
+  z_window: 168
+  z_abs_block: 2.0
+  action: block
+  reduce_size_factor: 0.5
+  apply_to:
+  - long
+  - short
+risk_fng:
+  enabled: false
+  path: ''
+  low_threshold: 25
+  high_threshold: 75
+  mult_low: 0.5
+  mult_high: 0.75
+  apply_to: risk_per_trade
+multi_timeframe:
+  enabled: false
+  timeframe: 4h
+  ma_period: 200
+  require_trend_alignment: true
+time_exit:
+  enabled: false
+  max_holding_hours: 24
+  soft_exit_hours: 12
+  min_r_multiple_after_soft: 1.0
+adaptive_trailing:
+  enabled: false
+  activate_after_R: 1.5
+  trailing_atr_multiplier: 1.5
+strategy_breakout:
+  mode: breakout
+  breakout_lookback_N: 72
+  ema_fast_period: 12
+  ema_slow_period: 26
+  macd_fast: 12
+  macd_slow: 26
+  macd_signal: 9
+  rsi_period: 14
+  atr_period: 14
+  atr_k: 2.5
+  use_ma200_filter: true
+  ma200_period: 200
+  min_rel_volume: 1.0
+  use_rel_volume_filter: true
+  time_stop_hours: 48
+  use_walk_forward: true
+  wf_train_bars: 1440
+  wf_val_bars: 720
+  wf_test_bars: 720
+  ml_prob_threshold: 0.55
+  ml_feature_selector: lightgbm
+  ml_feature_top_k: 8
+  retest:
+    enabled: false
+    window_bars: 6
+    tolerance_atr: 0.25
+    confirmation: close_back
+strategy_router:
+  enable_trend_up_long: true
+  enable_trend_down_short: true
+  enable_range: false
+  enable_chaos: false
+  short_use_ma200_filter: false
+  bull_slope_min: 0.0
+  cooldown_bars_after_exit: 6
+  overrides:
+    bull_trend:
+      breakout_N: 120
+    bear_trend:
+      breakout_N: 72
+risk:
+  account_equity_usdt: 10000
+  risk_per_trade: 0.005
+  max_leverage: 2.0
+  max_open_positions: 1
+  daily_loss_limit_pct: 0.02
+  weekly_loss_limit_pct: 0.05
+  liquidation_buffer_pct: 0.35
+frictions:
+  fee_rate_per_side: 0.001
+  slippage_rate_per_side: 0.0003
+  borrow_interest_rate_per_hour: 2.0e-05
+execution:
+  margin_mode: isolated
+  order_type: MARKET
+  use_testnet: true
+  api_key_env: BINANCE_API_KEY
+  api_secret_env: BINANCE_API_SECRET
+  dry_run: true
+  detail_timeframe:
+    enabled: false
+    timeframe: 15m
+    policy: conservative
