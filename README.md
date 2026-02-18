@@ -168,3 +168,47 @@ pytest -q
 - `blocked_funding`, `blocked_macro`, `blocked_micro`, `blocked_chaos`
 
 `regime_stats.json` inclui a distribuição dos regimes finais e contagem de switches.
+
+## Fear & Greed (opcional)
+```bash
+python -m bot fetch-fng --start 2025-01-01 --end 2025-04-01
+```
+
+Saida:
+- `data/raw/fng/fng_1d_2025-01-01_2025-04-01.parquet`
+- `data/processed/fng_BTC_1h_2025-01-01_2025-04-01.parquet`
+
+## Compare com multiplas runs
+```bash
+python -m bot compare --runs runs/A --runs runs/B --save-path runs/compare.json
+```
+
+## Experimentos recomendados
+Smoke baseline vs funding gate:
+```bash
+python -m bot backtest --data-path data/processed/BTCUSDT_1h_2025-01-01_2025-04-01.parquet --config config/settings.yaml --short-only --run-name smoke_short_baseline --tag smoke
+python -m bot backtest --data-path data/processed/BTCUSDT_1h_2025-01-01_2025-04-01.parquet --funding-path data/processed/funding_BTCUSDT_1h_2025-01-01_2025-04-01.parquet --config config/settings.yaml --short-only --run-name smoke_short_funding --tag smoke
+python -m bot compare --runs runs/smoke_short_baseline --runs runs/smoke_short_funding --save-path runs/compare_smoke_short_funding.json
+```
+
+Ablacao MA200:
+```bash
+python -m bot backtest --data-path data/processed/BTCUSDT_1h_2025-01-01_2025-04-01.parquet --config config/settings.yaml --short-only --use-ma200-filter --run-name smoke_ma200_on --tag ablation
+python -m bot backtest --data-path data/processed/BTCUSDT_1h_2025-01-01_2025-04-01.parquet --config config/settings.yaml --short-only --no-use-ma200-filter --run-name smoke_ma200_off --tag ablation
+python -m bot compare --runs runs/smoke_ma200_off --runs runs/smoke_ma200_on --save-path runs/compare_ma200.json
+```
+
+Ablacao FNG:
+```bash
+python -m bot fetch-fng --start 2025-01-01 --end 2025-04-01
+python -m bot backtest --data-path data/processed/BTCUSDT_1h_2025-01-01_2025-04-01.parquet --fng-path data/processed/fng_BTC_1h_2025-01-01_2025-04-01.parquet --config config/settings.yaml --short-only --run-name smoke_fng_on --tag fng
+python -m bot backtest --data-path data/processed/BTCUSDT_1h_2025-01-01_2025-04-01.parquet --config config/settings.yaml --short-only --run-name smoke_fng_off --tag fng
+python -m bot compare --runs runs/smoke_fng_off --runs runs/smoke_fng_on --save-path runs/compare_fng.json
+```
+
+Router adaptativo:
+```bash
+python -m bot backtest --data-path data/processed/BTCUSDT_1h_2023-01-01_2026-02-16.parquet --funding-path data/processed/funding_BTCUSDT_1h_2023-01-01_2026-02-16.parquet --config config/settings.yaml --run-name full_router --tag router
+python -m bot backtest --data-path data/processed/BTCUSDT_1h_2023-01-01_2026-02-16.parquet --funding-path data/processed/funding_BTCUSDT_1h_2023-01-01_2026-02-16.parquet --config config/settings.yaml --run-name full_no_router --tag router --disable-router
+python -m bot compare --runs runs/full_no_router --runs runs/full_router --save-path runs/compare_router.json
+```
