@@ -30,12 +30,12 @@ def test_router_allows_only_expected_side() -> None:
     settings = StrategyBreakoutSettings(mode="breakout", breakout_lookback_N=10, use_ma200_filter=False, use_rel_volume_filter=False)
     strategy = BreakoutATRStrategy(settings, StrategyRouterSettings())
 
-    up_short_df, i = _df_with_signal("TREND_UP", "SHORT")
+    up_short_df, i = _df_with_signal("BULL_TREND", "SHORT")
     sig, reason = strategy.signal_decision(up_short_df, i)
     assert sig is None
     assert reason == "blocked_trend_up_short_only"
 
-    down_long_df, i = _df_with_signal("TREND_DOWN", "LONG")
+    down_long_df, i = _df_with_signal("BEAR_TREND", "LONG")
     sig, reason = strategy.signal_decision(down_long_df, i)
     assert sig is None
     assert reason == "blocked_trend_down_long_only"
@@ -50,7 +50,7 @@ def test_short_only_overrides_regime_router() -> None:
         trade_direction="short",
     )
     strategy = BreakoutATRStrategy(settings, StrategyRouterSettings(enable_range=False, enable_chaos=False))
-    df, i = _df_with_signal("RANGE", "SHORT")
+    df, i = _df_with_signal("TRANSITION_RANGE", "SHORT")
     sig, reason = strategy.signal_decision(df, i)
     assert sig is not None
     assert sig.side == "SHORT"

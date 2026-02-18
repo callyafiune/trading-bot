@@ -27,7 +27,7 @@ class Position:
 class BacktestEngine:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
-        self.strategy = BreakoutATRStrategy(settings.strategy_breakout, settings.strategy_router)
+        self.strategy = BreakoutATRStrategy(settings.strategy_breakout, settings.strategy_router, settings.funding_filter)
         self.risk = RiskManager(settings.risk)
         self.broker = BrokerSim(settings.frictions.fee_rate_per_side, settings.frictions.slippage_rate_per_side)
         self.last_run_diagnostics: dict[str, int | float | str | None] = {}
@@ -52,6 +52,10 @@ class BacktestEngine:
             "signals_blocked_mode": 0,
             "signals_blocked_ma200": 0,
             "blocked_by_regime_reason": {},
+            "blocked_funding": 0,
+            "blocked_macro": 0,
+            "blocked_micro": 0,
+            "blocked_chaos": 0,
         }
 
         day_anchor: pd.Timestamp | None = None
@@ -85,7 +89,15 @@ class BacktestEngine:
                 stop = self.strategy.initial_stop(intent.side, entry_open, atr)
                 size = self.risk.size_position(equity, entry_open, stop, intent.side)
                 if size.valid and size.qty > 0:
-                    fill = self.broker.execute_entry(intent.side, entry_open, size.qty)
+                    qty = size.qty
+                    funding_action = str(row.get("funding_action", "none"))
+                    if funding_action == "reduce_size":
+                        qty = qty * self.settings.funding_filter.reduce_size_factor
+                    if qty <= 0:
+                        diagnostics["signals_blocked_risk"] += 1
+                        intent = None
+                        continue
+                    fill = self.broker.execute_entry(intent.side, entry_open, qty)
                     position = Position(
                         intent.side,
                         fill.qty,
@@ -171,6 +183,14 @@ class BacktestEngine:
                     blocked_by_regime = diagnostics["blocked_by_regime_reason"]
                     assert isinstance(blocked_by_regime, dict)
                     blocked_by_regime[blocked_reason] = int(blocked_by_regime.get(blocked_reason, 0)) + 1
+                    if "trend_" in blocked_reason:
+                        diagnostics["blocked_macro"] += 1
+                    if "range" in blocked_reason:
+                        diagnostics["blocked_micro"] += 1
+                    if "chaos" in blocked_reason:
+                        diagnostics["blocked_chaos"] += 1
+                elif blocked_reason == "funding":
+                    diagnostics["blocked_funding"] += 1
                 elif blocked_reason == "ma200":
                     diagnostics["signals_blocked_ma200"] += 1
                 elif blocked_reason in ("macd_gate", "ml_gate", "unsupported_mode"):

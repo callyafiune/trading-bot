@@ -3,6 +3,8 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
+from bot.utils.config import FeatureSettings
+
 
 def _true_range(df: pd.DataFrame) -> pd.Series:
     prev_close = df["close"].shift(1)
@@ -49,7 +51,8 @@ def _rsi(close: pd.Series, period: int = 14) -> pd.Series:
     return 100 - (100 / (1 + rs))
 
 
-def build_features(df: pd.DataFrame) -> pd.DataFrame:
+def build_features(df: pd.DataFrame, settings: FeatureSettings | None = None) -> pd.DataFrame:
+    settings = settings or FeatureSettings()
     out = df.copy()
     log_price = np.log(out["close"])
     for n in [1, 2, 4, 8, 24]:
@@ -74,6 +77,16 @@ def build_features(df: pd.DataFrame) -> pd.DataFrame:
 
     out["adx_14"] = _adx(out, 14)
 
+    out["ema50"] = _ema(out["close"], settings.ema_fast)
+    out["ema200"] = _ema(out["close"], settings.ema_slow)
+    out["slope_ema200"] = (out["ema200"] / out["ema200"].shift(settings.slope_window)) - 1.0
+
+    log_ret_1 = np.log(out["close"]).diff()
+    vol_roll = log_ret_1.rolling(settings.vol_window, min_periods=settings.vol_window).std()
+    if settings.annualize_vol:
+        vol_roll = vol_roll * np.sqrt(24 * 365)
+    out["vol_roll"] = vol_roll
+
     bb_mid = out["close"].rolling(20, min_periods=20).mean()
     bb_std = out["close"].rolling(20, min_periods=20).std()
     bb_up = bb_mid + 2 * bb_std
@@ -83,4 +96,11 @@ def build_features(df: pd.DataFrame) -> pd.DataFrame:
     out["rel_volume_24"] = out["volume"] / out["volume"].rolling(24, min_periods=24).mean()
     out["range_pct"] = (out["high"] - out["low"]) / out["close"]
     out["slope_24"] = out["close"].pct_change(24)
+
+    if "funding_rate" in out.columns:
+        window = 168
+        mean = out["funding_rate"].rolling(window, min_periods=window).mean()
+        std = out["funding_rate"].rolling(window, min_periods=window).std(ddof=0)
+        out["funding_z"] = (out["funding_rate"] - mean) / std.replace(0.0, np.nan)
+
     return out
