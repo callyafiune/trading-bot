@@ -28,6 +28,7 @@ MIN_TRADE_COLUMNS = [
     "stop_init",
     "stop_final",
     "reason_exit",
+    "exit_reason",
     "pnl_gross",
     "pnl_net",
     "fees",
@@ -35,6 +36,8 @@ MIN_TRADE_COLUMNS = [
     "interest",
     "regime_at_entry",
     "hold_hours",
+    "holding_hours",
+    "R_multiple_exit",
 ]
 
 
