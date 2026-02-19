@@ -163,6 +163,38 @@ class AdaptiveTrailingSettings(BaseModel):
     trailing_atr_multiplier: float = 1.5
 
 
+class MarketStructureSettings(BaseModel):
+    class MsbSettings(BaseModel):
+        enabled: bool = False
+        persist_bars: int = 3
+        min_break_atr: float = 0.0
+
+    class GateSettings(BaseModel):
+        enabled: bool = False
+        mode: Literal["msb_only", "structure_trend", "hybrid"] = "structure_trend"
+        allow_long_when: list[Literal["BULLISH_MSB", "BULLISH_STRUCTURE"]] = Field(
+            default_factory=lambda: ["BULLISH_MSB", "BULLISH_STRUCTURE"]
+        )
+        allow_short_when: list[Literal["BEARISH_MSB", "BEARISH_STRUCTURE"]] = Field(
+            default_factory=lambda: ["BEARISH_MSB", "BEARISH_STRUCTURE"]
+        )
+        block_in_neutral: bool = True
+        hybrid_require_both: bool = False
+
+    class RiskAdjustSettings(BaseModel):
+        enabled: bool = False
+        bull_risk_mult: float = 1.0
+        bear_risk_mult: float = 1.0
+        neutral_risk_mult: float = 0.0
+
+    enabled: bool = False
+    left_bars: int = 3
+    right_bars: int = 3
+    msb: MsbSettings = Field(default_factory=MsbSettings)
+    gate: GateSettings = Field(default_factory=GateSettings)
+    risk_adjust: RiskAdjustSettings = Field(default_factory=RiskAdjustSettings)
+
+
 class Settings(BaseModel):
     symbol: str = "BTCUSDT"
     interval: str = "1h"
@@ -176,6 +208,7 @@ class Settings(BaseModel):
     multi_timeframe: MultiTimeframeSettings = Field(default_factory=MultiTimeframeSettings)
     time_exit: TimeExitSettings = Field(default_factory=TimeExitSettings)
     adaptive_trailing: AdaptiveTrailingSettings = Field(default_factory=AdaptiveTrailingSettings)
+    market_structure: MarketStructureSettings = Field(default_factory=MarketStructureSettings)
     strategy_breakout: StrategyBreakoutSettings = Field(default_factory=StrategyBreakoutSettings)
     strategy_router: StrategyRouterSettings = Field(default_factory=StrategyRouterSettings)
     risk: RiskSettings = Field(default_factory=RiskSettings)

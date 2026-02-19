@@ -54,6 +54,26 @@ adaptive_trailing:
   enabled: false
   activate_after_R: 1.5
   trailing_atr_multiplier: 1.5
+market_structure:
+  enabled: true
+  left_bars: 3
+  right_bars: 3
+  msb:
+    enabled: true
+    persist_bars: 1
+    min_break_atr: 0.2
+  gate:
+    enabled: true
+    mode: hybrid
+    allow_long_when: [BULLISH_MSB, BULLISH_STRUCTURE]
+    allow_short_when: [BEARISH_MSB, BEARISH_STRUCTURE]
+    block_in_neutral: true
+    hybrid_require_both: true
+  risk_adjust:
+    enabled: false
+    bull_risk_mult: 1.0
+    bear_risk_mult: 1.0
+    neutral_risk_mult: 0.0
 strategy_breakout:
   mode: breakout
   breakout_lookback_N: 72

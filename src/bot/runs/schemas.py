@@ -24,6 +24,9 @@ class SummaryCounts(BaseModel):
     blocked_funding_short: int = 0
     blocked_fng_long: int = 0
     blocked_fng_short: int = 0
+    blocked_structure_total: int = 0
+    blocked_structure_long: int = 0
+    blocked_structure_short: int = 0
 
 
 class BacktestSummary(BaseModel):
@@ -60,6 +63,15 @@ class BacktestSummary(BaseModel):
     blocked_fng_long: int = 0
     blocked_fng_short: int = 0
     blocked_fng_total: int = 0
+    blocked_structure_total: int = 0
+    blocked_structure_long: int = 0
+    blocked_structure_short: int = 0
+    msb_bull_count: int = 0
+    msb_bear_count: int = 0
+    trades_taken_after_msb: int = 0
+    trades_taken_in_bull_structure: int = 0
+    trades_taken_in_bear_structure: int = 0
+    trades_taken_in_neutral: int = 0
     blocked_macro: int = 0
     blocked_micro: int = 0
     blocked_chaos: int = 0

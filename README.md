@@ -212,3 +212,78 @@ python -m bot backtest --data-path data/processed/BTCUSDT_1h_2023-01-01_2026-02-
 python -m bot backtest --data-path data/processed/BTCUSDT_1h_2023-01-01_2026-02-16.parquet --funding-path data/processed/funding_BTCUSDT_1h_2023-01-01_2026-02-16.parquet --config config/settings.yaml --run-name full_no_router --tag router --disable-router
 python -m bot compare --runs runs/full_no_router --runs runs/full_router --save-path runs/compare_router.json
 ```
+
+## Market Structure (HH/HL/LH/LL + MSB)
+- Swing High/Low usa janela `[i-left_bars, i+right_bars]`.
+- Sem lookahead: pivot em `i` so e confirmado em `i+right_bars` e so fica disponivel desse ponto em diante.
+- HH/LH: compara cada novo Swing High confirmado com o ultimo Swing High confirmado.
+- HL/LL: compara cada novo Swing Low confirmado com o ultimo Swing Low confirmado.
+- `ms_structure_state`:
+  - `BULLISH` quando ultimos tipos relevantes sao `HH + HL`
+  - `BEARISH` quando ultimos tipos relevantes sao `LH + LL`
+  - `NEUTRAL` caso contrario
+- MSB:
+  - `msb_bull`: `close[t]` rompe acima do ultimo `LH` confirmado
+  - `msb_bear`: `close[t]` rompe abaixo do ultimo `HL` confirmado
+  - `msb.min_break_atr` adiciona buffer anti-fakeout por ATR
+  - `msb.persist_bars` cria `msb_bull_active/msb_bear_active` por alguns candles
+
+Novas flags CLI:
+```bash
+--ms-enable / --no-ms-enable
+--ms-left 3
+--ms-right 3
+--msb-enable / --no-msb-enable
+--ms-gate-mode msb_only|structure_trend|hybrid
+```
+
+Quando `market_structure.enabled=true`, a run salva:
+- `market_structure_stats.json`
+- `pivots.csv`
+
+Comandos PowerShell (slice recente):
+```powershell
+python -m bot backtest `
+  --data-path data/processed/BTCUSDT_1h_2025-11-01_2026-02-16.parquet `
+  --funding-path data/processed/funding_BTCUSDT_1h_2025-11-01_2026-02-16.parquet `
+  --config config/settings.yaml `
+  --short-only `
+  --run-name recent_short_baseline `
+  --tag ms
+
+python -m bot backtest `
+  --data-path data/processed/BTCUSDT_1h_2025-11-01_2026-02-16.parquet `
+  --funding-path data/processed/funding_BTCUSDT_1h_2025-11-01_2026-02-16.parquet `
+  --config config/settings.yaml `
+  --short-only `
+  --ms-enable `
+  --ms-gate-mode structure_trend `
+  --run-name recent_short_ms_structure `
+  --tag ms
+
+python -m bot backtest `
+  --data-path data/processed/BTCUSDT_1h_2025-11-01_2026-02-16.parquet `
+  --funding-path data/processed/funding_BTCUSDT_1h_2025-11-01_2026-02-16.parquet `
+  --config config/settings.yaml `
+  --short-only `
+  --ms-enable `
+  --msb-enable `
+  --ms-gate-mode msb_only `
+  --run-name recent_short_msb_only `
+  --tag ms
+
+python -m bot compare `
+  --runs runs/recent_short_baseline `
+  --runs runs/recent_short_ms_structure `
+  --save-path runs/compare_recent_baseline_vs_ms_structure.json
+
+python -m bot compare `
+  --runs runs/recent_short_baseline `
+  --runs runs/recent_short_msb_only `
+  --save-path runs/compare_recent_baseline_vs_msb_only.json
+```
+
+Repetir no full dataset:
+- `full_short_baseline`
+- `full_short_ms_structure`
+- `full_short_msb_only`

@@ -18,6 +18,7 @@ from bot.backtest.metrics import compute_metrics
 from bot.backtest.reporting import print_summary
 from bot.execution.broker_binance import BrokerBinance
 from bot.features.builder import build_features
+from bot.market_structure import build_market_structure_stats, build_pivots_table
 from bot.market_data.binance_client import BinanceDataClient
 from bot.market_data.loader import (
     derive_detail_data_path,
@@ -102,6 +103,15 @@ def _build_summary(
     summary["blocked_fng_long"] = int(diagnostics.get("blocked_fng_long", 0))
     summary["blocked_fng_short"] = int(diagnostics.get("blocked_fng_short", 0))
     summary["blocked_fng_total"] = int(diagnostics.get("blocked_fng_total", 0))
+    summary["blocked_structure_total"] = int(diagnostics.get("blocked_structure_total", 0))
+    summary["blocked_structure_long"] = int(diagnostics.get("blocked_structure_long", 0))
+    summary["blocked_structure_short"] = int(diagnostics.get("blocked_structure_short", 0))
+    summary["msb_bull_count"] = int(diagnostics.get("msb_bull_count", 0))
+    summary["msb_bear_count"] = int(diagnostics.get("msb_bear_count", 0))
+    summary["trades_taken_after_msb"] = int(diagnostics.get("trades_taken_after_msb", 0))
+    summary["trades_taken_in_bull_structure"] = int(diagnostics.get("trades_taken_in_bull_structure", 0))
+    summary["trades_taken_in_bear_structure"] = int(diagnostics.get("trades_taken_in_bear_structure", 0))
+    summary["trades_taken_in_neutral"] = int(diagnostics.get("trades_taken_in_neutral", 0))
     summary["features_present"] = diagnostics.get("features_present", [])
     summary["time_in_regime"] = diagnostics.get("time_in_regime", {})
     summary["blocked_macro"] = int(diagnostics.get("blocked_macro", 0))
@@ -168,6 +178,9 @@ def _build_summary(
         "blocked_funding_short": int(diagnostics.get("blocked_funding_short", 0)),
         "blocked_fng_long": int(diagnostics.get("blocked_fng_long", 0)),
         "blocked_fng_short": int(diagnostics.get("blocked_fng_short", 0)),
+        "blocked_structure_total": int(diagnostics.get("blocked_structure_total", 0)),
+        "blocked_structure_long": int(diagnostics.get("blocked_structure_long", 0)),
+        "blocked_structure_short": int(diagnostics.get("blocked_structure_short", 0)),
     }
     return summary
 
@@ -242,12 +255,20 @@ REQUIRED_FEATURE_COLUMNS = [
     "adx14",
 ]
 
+REQUIRED_MARKET_STRUCTURE_COLUMNS = [
+    "ms_structure_state",
+    "msb_bull",
+    "msb_bear",
+]
+
 
 def _ensure_features(df: pd.DataFrame, cfg: Settings) -> pd.DataFrame:
     missing = [c for c in REQUIRED_FEATURE_COLUMNS if c not in df.columns]
+    if cfg.market_structure.enabled:
+        missing.extend([c for c in REQUIRED_MARKET_STRUCTURE_COLUMNS if c not in df.columns])
     if not missing:
         return df
-    return build_features(df, cfg.features)
+    return build_features(df, cfg.features, market_structure_settings=cfg.market_structure)
 
 
 def _execute_backtest(
@@ -256,7 +277,7 @@ def _execute_backtest(
     funding_path: str | None = None,
     detail_data_path: str | None = None,
     fng_path: str | None = None,
-) -> tuple[pd.DataFrame, pd.DataFrame, dict[str, Any], dict[str, Any], dict[str, Any]]:
+) -> tuple[pd.DataFrame, pd.DataFrame, dict[str, Any], dict[str, Any], dict[str, Any], dict[str, Any] | None, pd.DataFrame | None]:
     df = load_parquet(data_path)
     if funding_path and not cfg.funding_filter.enabled:
         cfg.funding_filter.enabled = True
@@ -343,12 +364,16 @@ def _execute_backtest(
     engine.last_run_diagnostics["mtf_enabled"] = bool(cfg.multi_timeframe.enabled)
     engine.last_run_diagnostics["detail_timeframe"] = cfg.execution.detail_timeframe.timeframe if cfg.execution.detail_timeframe.enabled else None
     engine.last_run_diagnostics["detail_policy"] = cfg.execution.detail_timeframe.policy if cfg.execution.detail_timeframe.enabled else None
+    engine.last_run_diagnostics["msb_bull_count"] = int(df.get("msb_bull", pd.Series(False, index=df.index)).sum())
+    engine.last_run_diagnostics["msb_bear_count"] = int(df.get("msb_bear", pd.Series(False, index=df.index)).sum())
 
     metrics = compute_metrics(trades, equity)
     summary = _build_summary(trades, equity, metrics, engine.last_run_diagnostics)
     regime_stats = _build_regime_stats(df, trades)
     direction_stats = _build_direction_stats(trades)
-    return trades, equity, summary, regime_stats, direction_stats
+    ms_stats = build_market_structure_stats(df) if cfg.market_structure.enabled else None
+    pivots = build_pivots_table(df) if cfg.market_structure.enabled else None
+    return trades, equity, summary, regime_stats, direction_stats, ms_stats, pivots
 
 
 @app.command("fetch-data")
@@ -359,7 +384,14 @@ def fetch_data(start: str = typer.Option(None), end: str = typer.Option(None), c
     df = BinanceDataClient().fetch_ohlcv(cfg.symbol, cfg.interval, start_date, end_date)
     raw_path = Path(f"data/raw/{cfg.symbol}_{cfg.interval}_{start_date}_{end_date}.parquet")
     proc_path = Path(f"data/processed/{cfg.symbol}_{cfg.interval}_{start_date}_{end_date}.parquet")
-    save_parquet(df, raw_path, proc_path, cfg.interval, feature_settings=cfg.features)
+    save_parquet(
+        df,
+        raw_path,
+        proc_path,
+        cfg.interval,
+        feature_settings=cfg.features,
+        market_structure_settings=cfg.market_structure,
+    )
     print(f"Dados salvos em {raw_path} e {proc_path}")
 
 
@@ -425,6 +457,11 @@ def backtest(
     fng_path: str | None = typer.Option(None, "--fng-path"),
     disable_router: bool = typer.Option(False, "--disable-router"),
     ml_threshold: float | None = typer.Option(None, "--ml-threshold"),
+    ms_enable: bool | None = typer.Option(None, "--ms-enable/--no-ms-enable"),
+    ms_left: int | None = typer.Option(None, "--ms-left"),
+    ms_right: int | None = typer.Option(None, "--ms-right"),
+    msb_enable: bool | None = typer.Option(None, "--msb-enable/--no-msb-enable"),
+    ms_gate_mode: str | None = typer.Option(None, "--ms-gate-mode"),
     long_only: bool = typer.Option(False, "--long-only"),
     short_only: bool = typer.Option(False, "--short-only"),
     dry_run: bool = typer.Option(False, "--dry-run"),
@@ -461,6 +498,18 @@ def backtest(
         cfg.strategy_breakout.retest.tolerance_atr = retest_tolerance_atr
     if ml_threshold is not None:
         cfg.strategy_breakout.ml_prob_threshold = ml_threshold
+    if ms_enable is not None:
+        cfg.market_structure.enabled = ms_enable
+    if ms_left is not None:
+        cfg.market_structure.left_bars = ms_left
+    if ms_right is not None:
+        cfg.market_structure.right_bars = ms_right
+    if msb_enable is not None:
+        cfg.market_structure.msb.enabled = msb_enable
+    if ms_gate_mode is not None:
+        if ms_gate_mode not in {"msb_only", "structure_trend", "hybrid"}:
+            raise typer.BadParameter("--ms-gate-mode deve ser msb_only|structure_trend|hybrid")
+        cfg.market_structure.gate.mode = ms_gate_mode  # type: ignore[assignment]
     if long_only and short_only:
         raise typer.BadParameter("Use apenas uma entre --long-only e --short-only")
     if long_only:
@@ -475,7 +524,7 @@ def backtest(
         return
 
     manager.init_run(ctx, settings=cfg, data_path=data_path, config_path=config, seed=seed, tag=tag)
-    trades, equity, summary, regime_stats, direction_stats = _execute_backtest(
+    trades, equity, summary, regime_stats, direction_stats, ms_stats, pivots = _execute_backtest(
         data_path,
         cfg,
         funding_path=funding_path,
@@ -489,6 +538,8 @@ def backtest(
         equity=equity,
         regime_stats=regime_stats,
         direction_stats=direction_stats,
+        market_structure_stats=ms_stats,
+        pivots=pivots,
     )
     print_summary(summary)
     print(f"[green]Artefatos salvos em:[/green] {ctx.run_dir}")
@@ -596,7 +647,7 @@ def grid(
         ctx = manager.build_context(run_cfg, run_name=run_name)
 
         manager.init_run(ctx, settings=run_cfg, data_path=data_path, config_path=config, seed=seed, tag=tag)
-        trades, equity, summary, regime_stats, direction_stats = _execute_backtest(data_path, run_cfg)
+        trades, equity, summary, regime_stats, direction_stats, ms_stats, pivots = _execute_backtest(data_path, run_cfg)
         manager.persist_outputs(
             ctx,
             summary=summary,
@@ -604,6 +655,8 @@ def grid(
             equity=equity,
             regime_stats=regime_stats,
             direction_stats=direction_stats,
+            market_structure_stats=ms_stats,
+            pivots=pivots,
         )
         print(f"[green]Grid run concluída:[/green] {ctx.run_dir}")
 
@@ -617,7 +670,7 @@ def paper(loop: bool = False, sleep: int = 60, data_path: str = typer.Option("")
             df = load_parquet(data_path)
         else:
             df = BinanceDataClient().fetch_ohlcv(cfg.symbol, cfg.interval, cfg.start_date, cfg.end_date)
-        df = build_features(df, cfg.features)
+        df = build_features(df, cfg.features, market_structure_settings=cfg.market_structure)
         df["regime"] = RegimeDetector(cfg.regime).apply(df)
         trades, equity = BacktestEngine(cfg).run(df)
         last_equity = float(equity["equity"].iloc[-1]) if not equity.empty else cfg.risk.account_equity_usdt

@@ -46,6 +46,7 @@ class BacktestEngine:
             settings.funding_filter,
             settings.fng_filter,
             settings.multi_timeframe,
+            settings.market_structure,
         )
         self.risk = RiskManager(settings.risk)
         self.broker = BrokerSim(settings.frictions.fee_rate_per_side, settings.frictions.slippage_rate_per_side)
@@ -65,13 +66,22 @@ class BacktestEngine:
 
     def _risk_multiplier(self, row: pd.Series, side: str) -> float:
         _ = side
-        if not self.settings.router.enabled:
-            return 1.0
-        regime = str(row.get("regime", ""))
-        micro = regime.split("_")[-1] if "_" in regime else regime
-        if micro == "RANGE":
-            return max(0.0, float(self.settings.router.range_risk_multiplier))
-        return 1.0
+        multiplier = 1.0
+        if self.settings.router.enabled:
+            regime = str(row.get("regime", ""))
+            micro = regime.split("_")[-1] if "_" in regime else regime
+            if micro == "RANGE":
+                multiplier *= max(0.0, float(self.settings.router.range_risk_multiplier))
+
+        if self.settings.market_structure.enabled and self.settings.market_structure.risk_adjust.enabled:
+            state = str(row.get("ms_structure_state", "NEUTRAL"))
+            if state == "BULLISH":
+                multiplier *= max(0.0, float(self.settings.market_structure.risk_adjust.bull_risk_mult))
+            elif state == "BEARISH":
+                multiplier *= max(0.0, float(self.settings.market_structure.risk_adjust.bear_risk_mult))
+            else:
+                multiplier *= max(0.0, float(self.settings.market_structure.risk_adjust.neutral_risk_mult))
+        return multiplier
 
     def _update_stop(self, position: Position, close_price: float, atr: float, diagnostics: dict[str, int | float | str | None]) -> None:
         denom = position.initial_r if position.initial_r > 0 else 1e-12
@@ -260,11 +270,22 @@ class BacktestEngine:
             "blocked_chaos": 0,
             "blocked_cooldown": 0,
             "blocked_mtf": 0,
+            "blocked_structure_total": 0,
+            "blocked_structure_long": 0,
+            "blocked_structure_short": 0,
+            "msb_bull_count": 0,
+            "msb_bear_count": 0,
+            "trades_taken_after_msb": 0,
+            "trades_taken_in_bull_structure": 0,
+            "trades_taken_in_bear_structure": 0,
+            "trades_taken_in_neutral": 0,
             "time_exit_triggered": 0,
             "adaptive_trailing_triggered": 0,
             "adaptive_trailing_stop_hits": 0,
             "detail_timeframe_enabled": int(detail_enabled),
         }
+        diagnostics["msb_bull_count"] = int(df.get("msb_bull", pd.Series(False, index=df.index)).sum())
+        diagnostics["msb_bear_count"] = int(df.get("msb_bear", pd.Series(False, index=df.index)).sum())
 
         day_anchor: pd.Timestamp | None = None
         week_anchor: tuple[int, int] | None = None
@@ -334,6 +355,17 @@ class BacktestEngine:
                     )
                     equity -= fill.fee
                     diagnostics["entries_executed"] += 1
+                    structure = str(row.get("ms_structure_state", "NEUTRAL"))
+                    if structure == "BULLISH":
+                        diagnostics["trades_taken_in_bull_structure"] += 1
+                    elif structure == "BEARISH":
+                        diagnostics["trades_taken_in_bear_structure"] += 1
+                    else:
+                        diagnostics["trades_taken_in_neutral"] += 1
+                    if bool(row.get("msb_bull_active", row.get("msb_bull", False))) or bool(
+                        row.get("msb_bear_active", row.get("msb_bear", False))
+                    ):
+                        diagnostics["trades_taken_after_msb"] += 1
                     entered_now = True
                 else:
                     diagnostics["signals_blocked_risk"] += 1
@@ -435,6 +467,12 @@ class BacktestEngine:
                     diagnostics["signals_blocked_ma200"] += 1
                 elif blocked_reason == "mtf":
                     diagnostics["blocked_mtf"] += 1
+                elif blocked_reason == "ms_gate_long":
+                    diagnostics["blocked_structure_total"] += 1
+                    diagnostics["blocked_structure_long"] += 1
+                elif blocked_reason == "ms_gate_short":
+                    diagnostics["blocked_structure_total"] += 1
+                    diagnostics["blocked_structure_short"] += 1
                 elif blocked_reason in ("macd_gate", "ml_gate", "unsupported_mode"):
                     diagnostics["signals_blocked_mode"] += 1
 

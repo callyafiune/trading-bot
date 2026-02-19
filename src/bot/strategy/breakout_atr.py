@@ -6,9 +6,11 @@ from typing import Literal
 import numpy as np
 import pandas as pd
 
+from bot.market_structure.detector import add_market_structure_features
 from bot.utils.config import (
     FngFilterSettings,
     FundingFilterSettings,
+    MarketStructureSettings,
     MultiTimeframeSettings,
     RouterSettings,
     StrategyBreakoutSettings,
@@ -47,6 +49,7 @@ class BreakoutATRStrategy:
         funding_filter: FundingFilterSettings | None = None,
         fng_filter: FngFilterSettings | None = None,
         mtf_settings: MultiTimeframeSettings | None = None,
+        market_structure: MarketStructureSettings | None = None,
     ) -> None:
         self.settings = settings
         self.router_settings = router_settings or StrategyRouterSettings()
@@ -54,6 +57,7 @@ class BreakoutATRStrategy:
         self.funding_filter = funding_filter or FundingFilterSettings()
         self.fng_filter = fng_filter or FngFilterSettings()
         self.mtf_settings = mtf_settings or MultiTimeframeSettings()
+        self.market_structure = market_structure or MarketStructureSettings()
         self.ml_probabilities = pd.Series(dtype=float)
         self.ml_threshold_by_index: dict[int, float] = {}
         self.selected_features: list[str] = []
@@ -85,6 +89,10 @@ class BreakoutATRStrategy:
     def prepare(self, df: pd.DataFrame) -> pd.DataFrame:
         self.pending_retest = {}
         out = self._attach_funding_features(df.copy())
+        if self.market_structure.enabled:
+            required = {"ms_structure_state", "msb_bull", "msb_bear"}
+            if not required.issubset(set(out.columns)):
+                out = add_market_structure_features(out, self.market_structure)
         if self.settings.mode != "ml_gate":
             return out
 
@@ -218,7 +226,74 @@ class BreakoutATRStrategy:
         if mtf_block:
             return SignalDecision(signal=None, blocked_reason=mtf_block, raw_signal=raw_signal)
 
+        ms_block = self._market_structure_gate_reason(row, raw_signal)
+        if ms_block:
+            return SignalDecision(signal=None, blocked_reason=ms_block, raw_signal=raw_signal)
+
         return SignalDecision(signal=raw_signal, blocked_reason=None, raw_signal=raw_signal)
+
+    def _market_structure_gate_reason(self, row: pd.Series, signal: Signal) -> str | None:
+        if not (self.market_structure.enabled and self.market_structure.gate.enabled):
+            return None
+
+        structure_state = str(row.get("ms_structure_state", "NEUTRAL"))
+        bull_structure = structure_state == "BULLISH"
+        bear_structure = structure_state == "BEARISH"
+        bull_msb = bool(row.get("msb_bull_active", row.get("msb_bull", False)))
+        bear_msb = bool(row.get("msb_bear_active", row.get("msb_bear", False)))
+
+        def token_active(token: str) -> bool:
+            if token == "BULLISH_MSB":
+                return bull_msb
+            if token == "BEARISH_MSB":
+                return bear_msb
+            if token == "BULLISH_STRUCTURE":
+                return bull_structure
+            if token == "BEARISH_STRUCTURE":
+                return bear_structure
+            return False
+
+        if signal.side == "LONG":
+            allow_tokens = list(self.market_structure.gate.allow_long_when)
+            mode_ok = self._market_structure_mode_allows(side="LONG", bull_structure=bull_structure, bear_structure=bear_structure, bull_msb=bull_msb, bear_msb=bear_msb)
+            token_ok = any(token_active(token) for token in allow_tokens) if allow_tokens else mode_ok
+            if self.market_structure.gate.block_in_neutral and structure_state == "NEUTRAL" and not bull_msb:
+                return "ms_gate_long"
+            return None if (mode_ok and token_ok) else "ms_gate_long"
+
+        allow_tokens = list(self.market_structure.gate.allow_short_when)
+        mode_ok = self._market_structure_mode_allows(side="SHORT", bull_structure=bull_structure, bear_structure=bear_structure, bull_msb=bull_msb, bear_msb=bear_msb)
+        token_ok = any(token_active(token) for token in allow_tokens) if allow_tokens else mode_ok
+        if self.market_structure.gate.block_in_neutral and structure_state == "NEUTRAL" and not bear_msb:
+            return "ms_gate_short"
+        return None if (mode_ok and token_ok) else "ms_gate_short"
+
+    def _market_structure_mode_allows(
+        self,
+        *,
+        side: Side,
+        bull_structure: bool,
+        bear_structure: bool,
+        bull_msb: bool,
+        bear_msb: bool,
+    ) -> bool:
+        mode = self.market_structure.gate.mode
+        if side == "LONG":
+            if mode == "msb_only":
+                return bull_msb
+            if mode == "structure_trend":
+                return bull_structure
+            if self.market_structure.gate.hybrid_require_both:
+                return bull_structure and bull_msb
+            return bull_structure or bull_msb
+
+        if mode == "msb_only":
+            return bear_msb
+        if mode == "structure_trend":
+            return bear_structure
+        if self.market_structure.gate.hybrid_require_both:
+            return bear_structure and bear_msb
+        return bear_structure or bear_msb
 
     def signal_decision(self, df: pd.DataFrame, i: int) -> tuple[Signal | None, str | None]:
         decision = self.evaluate_signal(df, i)

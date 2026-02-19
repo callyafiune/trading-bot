@@ -3,7 +3,8 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from bot.utils.config import FeatureSettings
+from bot.market_structure.detector import add_market_structure_features
+from bot.utils.config import FeatureSettings, MarketStructureSettings
 
 
 def _true_range(df: pd.DataFrame) -> pd.Series:
@@ -51,7 +52,11 @@ def _rsi(close: pd.Series, period: int = 14) -> pd.Series:
     return 100 - (100 / (1 + rs))
 
 
-def build_features(df: pd.DataFrame, settings: FeatureSettings | None = None) -> pd.DataFrame:
+def build_features(
+    df: pd.DataFrame,
+    settings: FeatureSettings | None = None,
+    market_structure_settings: MarketStructureSettings | None = None,
+) -> pd.DataFrame:
     settings = settings or FeatureSettings()
     out = df.copy()
     log_price = np.log(out["close"])
@@ -111,4 +116,4 @@ def build_features(df: pd.DataFrame, settings: FeatureSettings | None = None) ->
         std = out["funding_rate"].rolling(window, min_periods=window).std(ddof=0)
         out["funding_z"] = (out["funding_rate"] - mean) / std.replace(0.0, np.nan)
 
-    return out
+    return add_market_structure_features(out, market_structure_settings)

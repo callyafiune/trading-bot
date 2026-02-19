@@ -137,11 +137,17 @@ class RunManager:
         equity: pd.DataFrame,
         regime_stats: dict[str, Any],
         direction_stats: dict[str, Any],
+        market_structure_stats: dict[str, Any] | None = None,
+        pivots: pd.DataFrame | None = None,
     ) -> None:
         summary_model = BacktestSummary.model_validate(summary)
         write_json(ctx.run_dir / "summary.json", summary_model.model_dump(mode="json"))
         write_json(ctx.run_dir / "regime_stats.json", regime_stats)
         write_json(ctx.run_dir / "direction_stats.json", direction_stats)
+        if market_structure_stats is not None:
+            write_json(ctx.run_dir / "market_structure_stats.json", market_structure_stats)
+        if pivots is not None:
+            write_csv(ctx.run_dir / "pivots.csv", pivots)
         write_csv(ctx.run_dir / "trades.csv", self.enforce_trade_schema(trades))
         write_csv(ctx.run_dir / "equity.csv", self.enforce_equity_schema(equity))
 

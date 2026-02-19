@@ -6,7 +6,7 @@ import pandas as pd
 
 from bot.features.builder import build_features
 from bot.market_data.binance_client import INTERVAL_MS
-from bot.utils.config import FeatureSettings
+from bot.utils.config import FeatureSettings, MarketStructureSettings
 
 
 def resample_ohlcv(df: pd.DataFrame, timeframe: str) -> pd.DataFrame:
@@ -84,12 +84,13 @@ def save_parquet(
     processed_path: Path,
     interval: str,
     feature_settings: FeatureSettings | None = None,
+    market_structure_settings: MarketStructureSettings | None = None,
 ) -> None:
     raw_path.parent.mkdir(parents=True, exist_ok=True)
     processed_path.parent.mkdir(parents=True, exist_ok=True)
     df.to_parquet(raw_path, index=False)
     processed = enforce_continuous_candles(df, interval)
-    processed = build_features(processed, feature_settings)
+    processed = build_features(processed, feature_settings, market_structure_settings=market_structure_settings)
     processed.to_parquet(processed_path, index=False)
 
 
