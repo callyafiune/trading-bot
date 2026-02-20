@@ -106,6 +106,9 @@ def _build_summary(
     summary["blocked_structure_total"] = int(diagnostics.get("blocked_structure_total", 0))
     summary["blocked_structure_long"] = int(diagnostics.get("blocked_structure_long", 0))
     summary["blocked_structure_short"] = int(diagnostics.get("blocked_structure_short", 0))
+    summary["blocked_edge_total"] = int(diagnostics.get("blocked_edge_total", 0))
+    summary["blocked_by_regime_rule_total"] = int(diagnostics.get("blocked_by_regime_rule_total", 0))
+    summary["blocked_by_payoff_total"] = int(diagnostics.get("blocked_by_payoff_total", 0))
     summary["msb_bull_count"] = int(diagnostics.get("msb_bull_count", 0))
     summary["msb_bear_count"] = int(diagnostics.get("msb_bear_count", 0))
     summary["trades_taken_after_msb"] = int(diagnostics.get("trades_taken_after_msb", 0))
@@ -181,6 +184,9 @@ def _build_summary(
         "blocked_structure_total": int(diagnostics.get("blocked_structure_total", 0)),
         "blocked_structure_long": int(diagnostics.get("blocked_structure_long", 0)),
         "blocked_structure_short": int(diagnostics.get("blocked_structure_short", 0)),
+        "blocked_edge_total": int(diagnostics.get("blocked_edge_total", 0)),
+        "blocked_by_regime_rule_total": int(diagnostics.get("blocked_by_regime_rule_total", 0)),
+        "blocked_by_payoff_total": int(diagnostics.get("blocked_by_payoff_total", 0)),
     }
     return summary
 

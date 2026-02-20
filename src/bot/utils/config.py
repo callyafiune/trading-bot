@@ -195,6 +195,28 @@ class MarketStructureSettings(BaseModel):
     risk_adjust: RiskAdjustSettings = Field(default_factory=RiskAdjustSettings)
 
 
+class PatternMiningSettings(BaseModel):
+    enabled: bool = True
+    horizon: int = 3
+    block_contrary_prob_gt: float = 0.60
+    neighbor_count: int = 200
+    enable_regime_adjustments: bool = True
+    enable_regime_hard_block: bool = True
+    regime_hard_block_id: str = "pa0_sl1_vh1"
+    regime_rule_event: str = "break_structure_down"
+    regime_prob_boost: float = 0.08
+    regime_cont_prob_mult: float = 0.6
+    regime_expected_return_boost: float = 0.0015
+    enable_payoff_filter: bool = True
+    payoff_horizon: int = 3
+    payoff_ratio_min: float = 1.20
+    payoff_expected_min: float = 0.0
+    payoff_models_path: str = ""
+    payoff_train_on_startup: bool = False
+    payoff_fee_bps: float = 4.0
+    payoff_slippage_bps: float = 2.0
+
+
 class Settings(BaseModel):
     symbol: str = "BTCUSDT"
     interval: str = "1h"
@@ -209,6 +231,7 @@ class Settings(BaseModel):
     time_exit: TimeExitSettings = Field(default_factory=TimeExitSettings)
     adaptive_trailing: AdaptiveTrailingSettings = Field(default_factory=AdaptiveTrailingSettings)
     market_structure: MarketStructureSettings = Field(default_factory=MarketStructureSettings)
+    pattern_mining: PatternMiningSettings = Field(default_factory=PatternMiningSettings)
     strategy_breakout: StrategyBreakoutSettings = Field(default_factory=StrategyBreakoutSettings)
     strategy_router: StrategyRouterSettings = Field(default_factory=StrategyRouterSettings)
     risk: RiskSettings = Field(default_factory=RiskSettings)

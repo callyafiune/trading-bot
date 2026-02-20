@@ -47,6 +47,7 @@ class BacktestEngine:
             settings.fng_filter,
             settings.multi_timeframe,
             settings.market_structure,
+            settings.pattern_mining,
         )
         self.risk = RiskManager(settings.risk)
         self.broker = BrokerSim(settings.frictions.fee_rate_per_side, settings.frictions.slippage_rate_per_side)
@@ -273,6 +274,9 @@ class BacktestEngine:
             "blocked_structure_total": 0,
             "blocked_structure_long": 0,
             "blocked_structure_short": 0,
+            "blocked_edge_total": 0,
+            "blocked_by_regime_rule_total": 0,
+            "blocked_by_payoff_total": 0,
             "msb_bull_count": 0,
             "msb_bear_count": 0,
             "trades_taken_after_msb": 0,
@@ -473,6 +477,12 @@ class BacktestEngine:
                 elif blocked_reason == "ms_gate_short":
                     diagnostics["blocked_structure_total"] += 1
                     diagnostics["blocked_structure_short"] += 1
+                elif blocked_reason == "edge_contra_prob":
+                    diagnostics["blocked_edge_total"] += 1
+                elif blocked_reason == "regime_rule_short":
+                    diagnostics["blocked_by_regime_rule_total"] += 1
+                elif blocked_reason == "payoff_filter":
+                    diagnostics["blocked_by_payoff_total"] += 1
                 elif blocked_reason in ("macd_gate", "ml_gate", "unsupported_mode"):
                     diagnostics["signals_blocked_mode"] += 1
 

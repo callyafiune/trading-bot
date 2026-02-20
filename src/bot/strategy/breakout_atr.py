@@ -1,21 +1,29 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 from typing import Literal
 
 import numpy as np
 import pandas as pd
 
 from bot.market_structure.detector import add_market_structure_features
+from bot.pattern_mining.edge_score import EdgeScoreService
+from bot.pattern_mining.event_detection import detect_events
+from bot.pattern_mining.feature_engineering import PATTERN_FEATURE_COLUMNS, build_pattern_features, build_regime_flags
+from bot.pattern_mining.labeling import add_labels
+from bot.pattern_mining.payoff_model import load_payoff_predictor, train_payoff_models
 from bot.utils.config import (
     FngFilterSettings,
     FundingFilterSettings,
     MarketStructureSettings,
     MultiTimeframeSettings,
+    PatternMiningSettings,
     RouterSettings,
     StrategyBreakoutSettings,
     StrategyRouterSettings,
 )
+from bot.utils.logging import setup_logger
 
 try:
     from xgboost import XGBClassifier
@@ -38,6 +46,7 @@ class SignalDecision:
     signal: Signal | None
     blocked_reason: str | None
     raw_signal: Signal | None
+    edge_score: dict[str, Any] | None = None
 
 
 class BreakoutATRStrategy:
@@ -50,6 +59,7 @@ class BreakoutATRStrategy:
         fng_filter: FngFilterSettings | None = None,
         mtf_settings: MultiTimeframeSettings | None = None,
         market_structure: MarketStructureSettings | None = None,
+        pattern_mining: PatternMiningSettings | None = None,
     ) -> None:
         self.settings = settings
         self.router_settings = router_settings or StrategyRouterSettings()
@@ -58,10 +68,13 @@ class BreakoutATRStrategy:
         self.fng_filter = fng_filter or FngFilterSettings()
         self.mtf_settings = mtf_settings or MultiTimeframeSettings()
         self.market_structure = market_structure or MarketStructureSettings()
+        self.pattern_mining = pattern_mining or PatternMiningSettings()
         self.ml_probabilities = pd.Series(dtype=float)
         self.ml_threshold_by_index: dict[int, float] = {}
         self.selected_features: list[str] = []
         self.pending_retest: dict[str, dict[str, float | int]] = {}
+        self.edge_service: EdgeScoreService | None = None
+        self.logger = setup_logger("bot.strategy")
 
     def _attach_funding_features(self, out: pd.DataFrame) -> pd.DataFrame:
         out = out.copy()
@@ -89,11 +102,15 @@ class BreakoutATRStrategy:
     def prepare(self, df: pd.DataFrame) -> pd.DataFrame:
         self.pending_retest = {}
         out = self._attach_funding_features(df.copy())
+        out = build_pattern_features(out)
+        out = detect_events(out)
+        out = build_regime_flags(out)
         if self.market_structure.enabled:
             required = {"ms_structure_state", "msb_bull", "msb_bear"}
             if not required.issubset(set(out.columns)):
                 out = add_market_structure_features(out, self.market_structure)
         if self.settings.mode != "ml_gate":
+            self._prepare_edge_service(out)
             return out
 
         if XGBClassifier is None:
@@ -163,7 +180,42 @@ class BreakoutATRStrategy:
 
         out["ml_prob"] = probs
         out["ml_threshold"] = thresholds
+        self._prepare_edge_service(out)
         return out
+
+    def _prepare_edge_service(self, df: pd.DataFrame) -> None:
+        if not self.pattern_mining.enabled:
+            self.edge_service = None
+            return
+        try:
+            payoff_predictor = None
+            payoff_models_path = str(self.pattern_mining.payoff_models_path or "").strip()
+            if payoff_models_path:
+                payoff_predictor = load_payoff_predictor(payoff_models_path)
+            if payoff_predictor is None and self.pattern_mining.payoff_train_on_startup and payoff_models_path:
+                horizon = int(self.pattern_mining.payoff_horizon or self.pattern_mining.horizon)
+                train_df = add_labels(df.copy(), horizon=horizon)
+                feature_cols = [c for c in PATTERN_FEATURE_COLUMNS if c in train_df.columns]
+                artifacts = train_payoff_models(train_df, feature_cols, self.pattern_mining, model_dir=payoff_models_path)
+                from bot.pattern_mining.payoff_model import PayoffPredictor
+
+                payoff_predictor = PayoffPredictor(artifacts)
+            self.edge_service = EdgeScoreService(
+                horizon=int(self.pattern_mining.horizon),
+                neighbor_count=int(self.pattern_mining.neighbor_count),
+                enable_regime_adjustments=bool(self.pattern_mining.enable_regime_adjustments),
+                regime_hard_block_id=str(self.pattern_mining.regime_hard_block_id),
+                regime_rule_event=str(self.pattern_mining.regime_rule_event),
+                regime_prob_boost=float(self.pattern_mining.regime_prob_boost),
+                regime_cont_prob_mult=float(self.pattern_mining.regime_cont_prob_mult),
+                regime_expected_return_boost=float(self.pattern_mining.regime_expected_return_boost),
+                payoff_predictor=payoff_predictor,
+                payoff_fee_bps=float(self.pattern_mining.payoff_fee_bps),
+                payoff_slippage_bps=float(self.pattern_mining.payoff_slippage_bps),
+            ).fit(df)
+        except Exception as exc:
+            self.edge_service = None
+            self.logger.warning("pattern_mining_unavailable", extra={"extra": {"error": str(exc)}})
 
     def _select_features(self, train_xy: pd.DataFrame, feature_cols: list[str]) -> list[str]:
         model = XGBClassifier(
@@ -230,7 +282,109 @@ class BreakoutATRStrategy:
         if ms_block:
             return SignalDecision(signal=None, blocked_reason=ms_block, raw_signal=raw_signal)
 
-        return SignalDecision(signal=raw_signal, blocked_reason=None, raw_signal=raw_signal)
+        edge_score = self._compute_edge_score(row)
+        regime_rule_block = self._regime_rule_block_reason(raw_signal.side, row, edge_score)
+        self.logger.info(
+            "edge_score",
+            extra={
+                "extra": {
+                    "timestamp": str(row.get("open_time")),
+                    "side": raw_signal.side,
+                    "blocked_by_regime_rule": bool(regime_rule_block),
+                    "blocked_by_payoff_filter": False,
+                    "event_break_structure_down": bool(edge_score.get("break_structure_down", False)),
+                    "event_sweep_down_reclaim": bool(edge_score.get("sweep_down_reclaim", False)),
+                    "event_big_lower_wick": bool(edge_score.get("big_lower_wick", False)),
+                    **edge_score,
+                }
+            },
+        )
+        if regime_rule_block:
+            return SignalDecision(signal=None, blocked_reason=regime_rule_block, raw_signal=raw_signal, edge_score=edge_score)
+        payoff_block = self._payoff_filter_reason(edge_score)
+        if payoff_block:
+            self.logger.info(
+                "payoff_filter_block",
+                extra={
+                    "extra": {
+                        "timestamp": str(row.get("open_time")),
+                        "side": raw_signal.side,
+                        "blocked_by_payoff_filter": True,
+                        **edge_score,
+                    }
+                },
+            )
+            return SignalDecision(signal=None, blocked_reason=payoff_block, raw_signal=raw_signal, edge_score=edge_score)
+        edge_block = self._edge_filter_reason(raw_signal.side, edge_score)
+        if edge_block:
+            return SignalDecision(signal=None, blocked_reason=edge_block, raw_signal=raw_signal, edge_score=edge_score)
+
+        return SignalDecision(signal=raw_signal, blocked_reason=None, raw_signal=raw_signal, edge_score=edge_score)
+
+    def _compute_edge_score(self, row: pd.Series) -> dict[str, Any]:
+        features: dict[str, Any] = {name: float(row.get(name, np.nan)) for name in PATTERN_FEATURE_COLUMNS}
+        features.update(
+            {
+                "regime_price_above_ma99": bool(row.get("regime_price_above_ma99", False)),
+                "regime_ma99_slope_up": bool(row.get("regime_ma99_slope_up", False)),
+                "regime_vol_high": bool(row.get("regime_vol_high", False)),
+                "regime_id": str(row.get("regime_id", "")),
+                "break_structure_down": bool(row.get("break_structure_down", False)),
+                "break_structure_up": bool(row.get("break_structure_up", False)),
+                "sweep_down_reclaim": bool(row.get("sweep_down_reclaim", False)),
+                "big_lower_wick": bool(row.get("big_lower_wick", False)),
+            }
+        )
+        if self.edge_service is None:
+            return {
+                "reversal_prob_3h": 0.5,
+                "continuation_prob_3h": 0.5,
+                "expected_return_3h": 0.0,
+                "regime_id": str(row.get("regime_id", "pa0_sl0_vh0")),
+                "regime_price_above_ma99": bool(row.get("regime_price_above_ma99", False)),
+                "regime_ma99_slope_up": bool(row.get("regime_ma99_slope_up", False)),
+                "regime_vol_high": bool(row.get("regime_vol_high", False)),
+                "break_structure_down": bool(row.get("break_structure_down", False)),
+                "break_structure_up": bool(row.get("break_structure_up", False)),
+                "sweep_down_reclaim": bool(row.get("sweep_down_reclaim", False)),
+                "big_lower_wick": bool(row.get("big_lower_wick", False)),
+            }
+        return self.edge_service.get_edge_score(features)
+
+    def _regime_rule_block_reason(self, side: Side, row: pd.Series, edge_score: dict[str, Any]) -> str | None:
+        if not (self.pattern_mining.enable_regime_adjustments and self.pattern_mining.enable_regime_hard_block):
+            return None
+        if side != "SHORT":
+            return None
+        event_name = str(self.pattern_mining.regime_rule_event)
+        event_hit = bool(edge_score.get(event_name, False))
+        regime_id = str(edge_score.get("regime_id", row.get("regime_id", "")))
+        if event_hit and regime_id == str(self.pattern_mining.regime_hard_block_id):
+            return "regime_rule_short"
+        return None
+
+    def _payoff_filter_reason(self, edge_score: dict[str, Any]) -> str | None:
+        if not self.pattern_mining.enable_payoff_filter:
+            return None
+        pred_runup = edge_score.get("pred_runup", None)
+        pred_ddown_abs = edge_score.get("pred_ddown_abs", None)
+        payoff_expected = edge_score.get("payoff_expected", None)
+        payoff_ratio = edge_score.get("payoff_ratio", None)
+        if pred_runup is None or pred_ddown_abs is None or payoff_expected is None or payoff_ratio is None:
+            return None
+        if float(payoff_expected) < float(self.pattern_mining.payoff_expected_min):
+            return "payoff_filter"
+        if float(payoff_ratio) < float(self.pattern_mining.payoff_ratio_min):
+            return "payoff_filter"
+        return None
+
+    def _edge_filter_reason(self, side: Side, edge_score: dict[str, float]) -> str | None:
+        threshold = float(self.pattern_mining.block_contrary_prob_gt)
+        if side == "LONG" and float(edge_score.get("reversal_prob_3h", 0.0)) > threshold:
+            return "edge_contra_prob"
+        if side == "SHORT" and float(edge_score.get("continuation_prob_3h", 0.0)) > threshold:
+            return "edge_contra_prob"
+        return None
 
     def _market_structure_gate_reason(self, row: pd.Series, signal: Signal) -> str | None:
         if not (self.market_structure.enabled and self.market_structure.gate.enabled):
