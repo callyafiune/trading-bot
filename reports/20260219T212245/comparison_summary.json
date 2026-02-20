@@ -1,0 +1,210 @@
+{
+  "improvement": false,
+  "before": {
+    "execution": {
+      "trades": 1271,
+      "winrate": 0.4067663257277734,
+      "expectancy": -0.001482798194846278,
+      "profit_factor": 0.5194001247772123,
+      "max_drawdown": -0.8510822075972772,
+      "avg_return_per_trade": -0.001482798194846278,
+      "avg_hold": 2.14162077104642,
+      "blocked_edge_total": 0,
+      "blocked_by_regime_rule_total": 5,
+      "adjusted_signal_total": 5,
+      "skipped_invalid_trade_total": 0,
+      "blocked_by_payoff_total": 0
+    },
+    "equity": {
+      "equity_final_return": -0.8507266299752587,
+      "equity_max_drawdown": -0.8514447288173349
+    },
+    "robustness_best_execution_expectancy": -0.00043582640865515594,
+    "robustness_best_execution_max_dd": -0.36331194840908543,
+    "robustness_top5": [
+      {
+        "wick_threshold": 0.8,
+        "horizon_candles": 12,
+        "target_return": 0.012,
+        "payoff_ratio_min": 1.2,
+        "payoff_expected_min": 0.0,
+        "baseline_expectancy": 2.2120905629552204e-05,
+        "baseline_max_dd": -0.5408322063908357,
+        "execution_expectancy": -0.00043582640865515594,
+        "execution_max_dd": -0.36331194840908543,
+        "execution_trades": 520,
+        "blocked_edge_total": 0,
+        "blocked_by_regime_rule_total": 4,
+        "blocked_by_payoff_total": 0
+      },
+      {
+        "wick_threshold": 0.8,
+        "horizon_candles": 4,
+        "target_return": 0.012,
+        "payoff_ratio_min": 1.2,
+        "payoff_expected_min": 0.0,
+        "baseline_expectancy": -0.000210006369640679,
+        "baseline_max_dd": -0.5475664030593241,
+        "execution_expectancy": -0.0005654905624412931,
+        "execution_max_dd": -0.40795222845560897,
+        "execution_trades": 636,
+        "blocked_edge_total": 0,
+        "blocked_by_regime_rule_total": 4,
+        "blocked_by_payoff_total": 0
+      },
+      {
+        "wick_threshold": 0.8,
+        "horizon_candles": 8,
+        "target_return": 0.012,
+        "payoff_ratio_min": 1.2,
+        "payoff_expected_min": 0.0,
+        "baseline_expectancy": 0.0002210679336731149,
+        "baseline_max_dd": -0.38538450879588726,
+        "execution_expectancy": -0.0006197932669284794,
+        "execution_max_dd": -0.4064794161943046,
+        "execution_trades": 554,
+        "blocked_edge_total": 0,
+        "blocked_by_regime_rule_total": 4,
+        "blocked_by_payoff_total": 0
+      },
+      {
+        "wick_threshold": 0.8,
+        "horizon_candles": 6,
+        "target_return": 0.012,
+        "payoff_ratio_min": 1.2,
+        "payoff_expected_min": 0.0,
+        "baseline_expectancy": -7.189708698587021e-05,
+        "baseline_max_dd": -0.4002748794768044,
+        "execution_expectancy": -0.0006719076846309189,
+        "execution_max_dd": -0.40259476022109053,
+        "execution_trades": 581,
+        "blocked_edge_total": 0,
+        "blocked_by_regime_rule_total": 4,
+        "blocked_by_payoff_total": 0
+      },
+      {
+        "wick_threshold": 0.8,
+        "horizon_candles": 3,
+        "target_return": 0.012,
+        "payoff_ratio_min": 1.2,
+        "payoff_expected_min": 0.0,
+        "baseline_expectancy": -0.00017385146895743724,
+        "baseline_max_dd": -0.44100170347770407,
+        "execution_expectancy": -0.0008105452579080175,
+        "execution_max_dd": -0.4933412335236923,
+        "execution_trades": 677,
+        "blocked_edge_total": 0,
+        "blocked_by_regime_rule_total": 4,
+        "blocked_by_payoff_total": 0
+      }
+    ]
+  },
+  "after": {
+    "execution": {
+      "trades": 604,
+      "winrate": 0.38576158940397354,
+      "expectancy": -0.0015513662427735508,
+      "profit_factor": 0.48061122006281964,
+      "max_drawdown": -0.6132988460848751,
+      "avg_return_per_trade": -0.0015513662427735508,
+      "avg_hold": 2.3642384105960264,
+      "blocked_edge_total": 0,
+      "blocked_by_regime_rule_total": 1,
+      "adjusted_signal_total": 1,
+      "skipped_invalid_trade_total": 0,
+      "blocked_by_payoff_total": 1037
+    },
+    "equity": {
+      "equity_final_return": -0.6111707932709072,
+      "equity_max_drawdown": -0.6142402203280275
+    },
+    "robustness_best_execution_expectancy": -0.0005349876993745822,
+    "robustness_best_execution_max_dd": -0.11302577392225976,
+    "robustness_top5": [
+      {
+        "wick_threshold": 0.5,
+        "horizon_candles": 12,
+        "target_return": 0.009,
+        "payoff_ratio_min": 1.5,
+        "payoff_expected_min": -0.0002,
+        "baseline_expectancy": -0.0007275531247703579,
+        "baseline_max_dd": -0.9330968031406038,
+        "execution_expectancy": -0.0005349876993745822,
+        "execution_max_dd": -0.16693056686943175,
+        "execution_trades": 195,
+        "blocked_edge_total": 0,
+        "blocked_by_regime_rule_total": 0,
+        "blocked_by_payoff_total": 2111
+      },
+      {
+        "wick_threshold": 0.5,
+        "horizon_candles": 12,
+        "target_return": 0.009,
+        "payoff_ratio_min": 1.5,
+        "payoff_expected_min": 0.0,
+        "baseline_expectancy": -0.0007275531247703579,
+        "baseline_max_dd": -0.9330968031406038,
+        "execution_expectancy": -0.0005349876993745822,
+        "execution_max_dd": -0.16693056686943175,
+        "execution_trades": 195,
+        "blocked_edge_total": 0,
+        "blocked_by_regime_rule_total": 0,
+        "blocked_by_payoff_total": 2111
+      },
+      {
+        "wick_threshold": 0.5,
+        "horizon_candles": 12,
+        "target_return": 0.009,
+        "payoff_ratio_min": 1.5,
+        "payoff_expected_min": 0.0002,
+        "baseline_expectancy": -0.0007275531247703579,
+        "baseline_max_dd": -0.9330968031406038,
+        "execution_expectancy": -0.0005349876993745822,
+        "execution_max_dd": -0.16693056686943175,
+        "execution_trades": 195,
+        "blocked_edge_total": 0,
+        "blocked_by_regime_rule_total": 0,
+        "blocked_by_payoff_total": 2111
+      },
+      {
+        "wick_threshold": 0.5,
+        "horizon_candles": 12,
+        "target_return": 0.009,
+        "payoff_ratio_min": 1.5,
+        "payoff_expected_min": 0.0005,
+        "baseline_expectancy": -0.0007275531247703579,
+        "baseline_max_dd": -0.9330968031406038,
+        "execution_expectancy": -0.0005349876993745822,
+        "execution_max_dd": -0.16693056686943175,
+        "execution_trades": 195,
+        "blocked_edge_total": 0,
+        "blocked_by_regime_rule_total": 0,
+        "blocked_by_payoff_total": 2111
+      },
+      {
+        "wick_threshold": 0.7,
+        "horizon_candles": 3,
+        "target_return": 0.009,
+        "payoff_ratio_min": 1.5,
+        "payoff_expected_min": -0.0002,
+        "baseline_expectancy": -0.0003139419936348404,
+        "baseline_max_dd": -0.5655078201759318,
+        "execution_expectancy": -0.0010833490614811433,
+        "execution_max_dd": -0.11302577392225976,
+        "execution_trades": 95,
+        "blocked_edge_total": 0,
+        "blocked_by_regime_rule_total": 0,
+        "blocked_by_payoff_total": 1340
+      }
+    ]
+  },
+  "payoff_training": {
+    "train_start": "2023-01-01 00:00:00+00:00",
+    "train_end": "2024-11-16 04:00:00+00:00",
+    "test_start": "2024-11-16 05:00:00+00:00",
+    "test_end": "2026-02-16 00:00:00+00:00",
+    "train_rows": 16445,
+    "test_rows": 10964,
+    "status": "trained"
+  }
+}

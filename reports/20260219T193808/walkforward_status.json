@@ -1,0 +1,8 @@
+{
+  "status": "no_valid_splits",
+  "total_candidate_splits": 158,
+  "valid_splits": 0,
+  "skipped_insufficient_rows": 158,
+  "skipped_single_class": 0,
+  "mean_auc": 0.0
+}

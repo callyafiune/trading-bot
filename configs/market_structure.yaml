@@ -1,0 +1,51 @@
+symbol: BTCUSDT
+timeframe: 1h
+start_date: "2023-01-01"
+end_date: "2026-12-31"
+timezone: UTC
+
+pivot_left: 2
+pivot_right: 2
+use_close_for_swings: false
+enter_on_breakout: false
+
+tp_mode: A
+rr_target: 2.0
+lookback_target: 300
+
+stop_mode: swing
+atr_length: 14
+atr_mult: 2.0
+
+taker_fee_rate: 0.0004
+slippage_rate: 0.0001
+risk_per_trade: 0.01
+leverage: 2.0
+
+one_position_only: true
+max_positions: 1
+
+filter_ma99: false
+filter_trend_ma: false
+trend_ma_length: 200
+filter_atr_vol: false
+atr_pct_min: 0.0
+filter_session: false
+allowed_hours_utc: []
+
+time_stop_enabled: false
+time_stop_candles: 72
+
+seed: 7
+output_dir: runs/market_structure
+cache_dir: data/cache
+
+grid_pivots:
+  - [2, 2]
+  - [3, 3]
+  - [4, 4]
+grid_tp_mode: [A, B]
+grid_rr_values: [1.5, 2.0, 3.0]
+grid_stop_mode: [swing, atr]
+grid_atr_mult: [2.0, 3.0]
+grid_filter_ma99: [false, true]

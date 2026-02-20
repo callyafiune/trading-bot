@@ -1,0 +1,49 @@
+symbol: BTCUSDT
+timeframe: 1h
+start_date: "2023-01-01"
+end_date: "2026-12-31"
+timezone: UTC
+
+lookback_init: 48
+significance_mode: atr
+atr_len: 14
+atr_k: 2.0
+percent_p: 0.008
+
+break_confirm_mode: close_plus_buffer
+buffer_mode: atr
+atr_buffer_k: 0.25
+percent_buffer_p: 0.001
+n_closes_confirm: 2
+
+allow_flip: true
+one_position_only: true
+
+stop_mode: major_level
+stop_atr_k: 2.0
+
+tp_mode: rr
+rr_target: 2.0
+
+taker_fee_rate: 0.0004
+slippage_rate: 0.0001
+risk_per_trade: 0.01
+leverage: 2.0
+
+filter_ma99: false
+
+seed: 7
+output_dir: runs/regime_shift
+cache_dir: data/cache
+
+grid_lookback_init: [24, 48, 72]
+grid_atr_k: [1.5, 2.0, 2.5]
+grid_percent_p: [0.005, 0.008, 0.01]
+grid_break_confirm_mode: [close_only, close_plus_buffer, n_closes]
+grid_atr_buffer_k: [0.0, 0.25, 0.5]
+grid_percent_buffer_p: [0.0, 0.001, 0.002]
+grid_stop_atr_k: [2.0, 3.0]
+grid_rr_target: [1.5, 2.0, 3.0]
+grid_allow_flip: [true, false]
+grid_filter_ma99: [false, true]
+grid_max_combinations: 30

@@ -1,0 +1,15 @@
+01. break_structure_down | edge=0.0259 | support=1004 | p_up=0.236 | p_down=0.210 | mean_ret=0.0002
+02. break_structure_up&regime_ma99_slope_up | edge=0.0229 | support=917 | p_up=0.226 | p_down=0.203 | mean_ret=0.0004
+03. break_structure_down&regime_ma99_slope_up | edge=0.0204 | support=294 | p_up=0.204 | p_down=0.184 | mean_ret=-0.0001
+04. regime_ma99_slope_up | edge=0.0196 | support=14464 | p_up=0.156 | p_down=0.137 | mean_ret=0.0003
+05. break_structure_up&regime_above_ma99 | edge=0.0192 | support=1094 | p_up=0.223 | p_down=0.204 | mean_ret=0.0004
+06. break_structure_up | edge=0.0188 | support=1276 | p_up=0.223 | p_down=0.205 | mean_ret=0.0004
+07. regime_above_ma99&regime_ma99_slope_up | edge=0.0186 | support=12018 | p_up=0.157 | p_down=0.139 | mean_ret=0.0003
+08. regime_above_ma99 | edge=0.0147 | support=14262 | p_up=0.154 | p_down=0.139 | mean_ret=0.0002
+09. sweep_down_reclaim | edge=-0.0024 | support=1263 | p_up=0.188 | p_down=0.190 | mean_ret=0.0002
+10. big_lower_wick | edge=-0.0029 | support=2734 | p_up=0.141 | p_down=0.144 | mean_ret=-0.0001
+11. big_lower_wick&regime_ma99_slope_up | edge=-0.0058 | support=1385 | p_up=0.142 | p_down=0.147 | mean_ret=-0.0001
+12. big_lower_wick&regime_above_ma99 | edge=-0.0121 | support=1321 | p_up=0.140 | p_down=0.152 | mean_ret=-0.0002
+13. big_lower_wick&sweep_down_reclaim | edge=-0.0287 | support=348 | p_up=0.164 | p_down=0.193 | mean_ret=-0.0001
+14. sweep_down_reclaim&regime_ma99_slope_up | edge=-0.0357 | support=448 | p_up=0.134 | p_down=0.170 | mean_ret=-0.0005
+15. sweep_down_reclaim&regime_above_ma99 | edge=-0.0502 | support=279 | p_up=0.147 | p_down=0.197 | mean_ret=-0.0005

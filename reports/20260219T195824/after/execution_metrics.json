@@ -1,0 +1,11 @@
+{
+  "trades": 3095,
+  "winrate": 0.39851325145442795,
+  "expectancy": -0.0015420741687451024,
+  "profit_factor": 0.5012998411420179,
+  "max_drawdown": -0.9918971943649314,
+  "avg_return_per_trade": -0.0015420741687451024,
+  "avg_hold": 2.138610662358643,
+  "blocked_edge_total": 0,
+  "blocked_by_regime_rule_total": 11
+}

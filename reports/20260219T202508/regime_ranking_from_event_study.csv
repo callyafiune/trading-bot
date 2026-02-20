@@ -1,0 +1,9 @@
+regime_id,best_edge,best_event,support
+pa0_sl1_vh1,0.0834990059642147,regime_ma99_slope_up,503
+pa0_sl0_vh1,0.07555555555555554,break_structure_down,225
+pa0_sl0_vh0,0.05645161290322581,break_structure_up,124
+pa1_sl1_vh1,0.05097649784839456,regime_above_ma99,3021
+pa1_sl1_vh0,0.022151898734177222,break_structure_up,632
+pa0_sl1_vh0,0.00926402470406587,regime_ma99_slope_up,1943
+pa1_sl0_vh0,-0.0005500550055005382,regime_above_ma99,1818
+pa1_sl0_vh1,-0.02816901408450706,regime_above_ma99,426

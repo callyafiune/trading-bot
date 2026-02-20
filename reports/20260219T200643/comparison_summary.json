@@ -1,0 +1,169 @@
+{
+  "improvement": false,
+  "before": {
+    "execution": {
+      "trades": 3097,
+      "winrate": 0.39909589925734584,
+      "expectancy": -0.0015372845900460948,
+      "profit_factor": 0.5025956452312026,
+      "max_drawdown": -0.991814533322598,
+      "avg_return_per_trade": -0.0015372845900460948,
+      "avg_hold": 2.1385211494995158,
+      "blocked_edge_total": 0,
+      "blocked_by_regime_rule_total": 0,
+      "adjusted_signal_total": 0,
+      "skipped_invalid_trade_total": 1
+    },
+    "equity": {
+      "equity_final_return": -0.9917939100528766,
+      "equity_max_drawdown": -0.9918333865093137
+    },
+    "robustness_best_execution_expectancy": -0.000910335869494326,
+    "robustness_best_execution_max_dd": -0.7757789936792316,
+    "robustness_top5": [
+      {
+        "wick_threshold": 0.8,
+        "horizon_candles": 4,
+        "target_return": 0.012,
+        "baseline_expectancy": -0.0006271225476785214,
+        "baseline_max_dd": -0.8981881695756667,
+        "execution_expectancy": -0.000910335869494326,
+        "execution_max_dd": -0.7910176166092631,
+        "execution_trades": 1477,
+        "blocked_edge_total": 0,
+        "blocked_by_regime_rule_total": 0
+      },
+      {
+        "wick_threshold": 0.8,
+        "horizon_candles": 12,
+        "target_return": 0.012,
+        "baseline_expectancy": -0.000381568202970694,
+        "baseline_max_dd": -0.8892477668521311,
+        "execution_expectancy": -0.000970376613488665,
+        "execution_max_dd": -0.7757789936792316,
+        "execution_trades": 1212,
+        "blocked_edge_total": 0,
+        "blocked_by_regime_rule_total": 0
+      },
+      {
+        "wick_threshold": 0.4,
+        "horizon_candles": 6,
+        "target_return": 0.012,
+        "baseline_expectancy": -0.0006231503555882755,
+        "baseline_max_dd": -0.9990296742770112,
+        "execution_expectancy": -0.0010600161368221168,
+        "execution_max_dd": -0.9817812594875414,
+        "execution_trades": 3493,
+        "blocked_edge_total": 0,
+        "blocked_by_regime_rule_total": 0
+      },
+      {
+        "wick_threshold": 0.8,
+        "horizon_candles": 6,
+        "target_return": 0.012,
+        "baseline_expectancy": -0.0005048698476550111,
+        "baseline_max_dd": -0.8547805017116832,
+        "execution_expectancy": -0.0010672776067897332,
+        "execution_max_dd": -0.7966214196888113,
+        "execution_trades": 1366,
+        "blocked_edge_total": 0,
+        "blocked_by_regime_rule_total": 0
+      },
+      {
+        "wick_threshold": 0.8,
+        "horizon_candles": 12,
+        "target_return": 0.009,
+        "baseline_expectancy": -0.000381568202970694,
+        "baseline_max_dd": -0.8892477668521311,
+        "execution_expectancy": -0.0010874211924508873,
+        "execution_max_dd": -0.7985513832960813,
+        "execution_trades": 1345,
+        "blocked_edge_total": 0,
+        "blocked_by_regime_rule_total": 0
+      }
+    ]
+  },
+  "after": {
+    "execution": {
+      "trades": 3097,
+      "winrate": 0.3981272198902163,
+      "expectancy": -0.001551925631126553,
+      "profit_factor": 0.49965301799256023,
+      "max_drawdown": -0.992178697346535,
+      "avg_return_per_trade": -0.001551925631126553,
+      "avg_hold": 2.1385211494995158,
+      "blocked_edge_total": 0,
+      "blocked_by_regime_rule_total": 10,
+      "adjusted_signal_total": 10,
+      "skipped_invalid_trade_total": 1
+    },
+    "equity": {
+      "equity_final_return": -0.9921589915874682,
+      "equity_max_drawdown": -0.9921967117719915
+    },
+    "robustness_best_execution_expectancy": -0.0009077874413525259,
+    "robustness_best_execution_max_dd": -0.7579564395787819,
+    "robustness_top5": [
+      {
+        "wick_threshold": 0.8,
+        "horizon_candles": 12,
+        "target_return": 0.012,
+        "baseline_expectancy": -0.000381568202970694,
+        "baseline_max_dd": -0.8892477668521311,
+        "execution_expectancy": -0.0009077874413525259,
+        "execution_max_dd": -0.7579564395787819,
+        "execution_trades": 1212,
+        "blocked_edge_total": 0,
+        "blocked_by_regime_rule_total": 12
+      },
+      {
+        "wick_threshold": 0.8,
+        "horizon_candles": 4,
+        "target_return": 0.012,
+        "baseline_expectancy": -0.0006271225476785214,
+        "baseline_max_dd": -0.8981881695756667,
+        "execution_expectancy": -0.0009080464325895767,
+        "execution_max_dd": -0.7901809037994453,
+        "execution_trades": 1477,
+        "blocked_edge_total": 0,
+        "blocked_by_regime_rule_total": 13
+      },
+      {
+        "wick_threshold": 0.8,
+        "horizon_candles": 6,
+        "target_return": 0.012,
+        "baseline_expectancy": -0.0005048698476550111,
+        "baseline_max_dd": -0.8547805017116832,
+        "execution_expectancy": -0.0010322169820007586,
+        "execution_max_dd": -0.7922983429248102,
+        "execution_trades": 1366,
+        "blocked_edge_total": 0,
+        "blocked_by_regime_rule_total": 12
+      },
+      {
+        "wick_threshold": 0.4,
+        "horizon_candles": 6,
+        "target_return": 0.012,
+        "baseline_expectancy": -0.0006231503555882755,
+        "baseline_max_dd": -0.9990296742770112,
+        "execution_expectancy": -0.0010560113619062618,
+        "execution_max_dd": -0.9815274755428479,
+        "execution_trades": 3493,
+        "blocked_edge_total": 0,
+        "blocked_by_regime_rule_total": 6
+      },
+      {
+        "wick_threshold": 0.8,
+        "horizon_candles": 12,
+        "target_return": 0.009,
+        "baseline_expectancy": -0.000381568202970694,
+        "baseline_max_dd": -0.8892477668521311,
+        "execution_expectancy": -0.00107704693269898,
+        "execution_max_dd": -0.7952204142131797,
+        "execution_trades": 1345,
+        "blocked_edge_total": 0,
+        "blocked_by_regime_rule_total": 11
+      }
+    ]
+  }
+}

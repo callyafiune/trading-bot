@@ -1,0 +1,39 @@
+{
+  "run_id": "20260219T202508",
+  "top2_regimes": [
+    "pa0_sl1_vh1",
+    "pa0_sl0_vh1"
+  ],
+  "summary": [
+    {
+      "scenario": "no_trade",
+      "allowed_regimes": "",
+      "trades": 0,
+      "expectancy": 0.0,
+      "winrate": 0.0,
+      "profit_factor": 0.0,
+      "max_drawdown": 0.0,
+      "avg_hold": 0.0
+    },
+    {
+      "scenario": "only_pa0_sl1_vh1",
+      "allowed_regimes": "pa0_sl1_vh1",
+      "trades": 78,
+      "expectancy": -0.0012220456336404552,
+      "winrate": 0.47435897435897434,
+      "profit_factor": 0.61934303888356,
+      "max_drawdown": -0.08999322014949263,
+      "avg_hold": 1.8717948717948718
+    },
+    {
+      "scenario": "only_top2_regimes",
+      "allowed_regimes": "pa0_sl1_vh1|pa0_sl0_vh1",
+      "trades": 574,
+      "expectancy": -0.0019510427486343278,
+      "winrate": 0.4076655052264808,
+      "profit_factor": 0.4820734862396621,
+      "max_drawdown": -0.6829509472152282,
+      "avg_hold": 1.602787456445993
+    }
+  ]
+}
