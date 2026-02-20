@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/banner.png" width="900" alt="BTCUSDT 1H Margin Bot"/>
+  <img src="docs/banner.png" width="75%" alt="BTCUSDT 1H Margin Bot"/>
 </p>
 # BTCUSDT 1H Margin Trading Bot
 
