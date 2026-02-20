@@ -4,14 +4,13 @@ Experimental directional trading system for Bitcoin (BTCUSDT) on Binance Margin.
 
 This project implements a configurable execution pipeline for evaluating breakout-based trading strategies using:
 
-volatility expansion (ATR)
-ADX trend regime detection
-optional MA200 directional bias
-optional funding filter
-optional market structure filter (HH/HL/LH/LL)
-optional MSB (Market Structure Break)
-optional ML trade filter (XGBoost)
-Supports LONG and SHORT.
+-   volatility expansion (ATR)
+-   ADX trend regime detection
+-   optional MA200 directional bias
+-   optional funding filter
+-   optional market structure filter (HH/HL/LH/LL)
+-   optional MSB (Market Structure Break)
+-   optional ML trade filter (XGBoost)
 
 ------------------------------------------------------------------------
 
