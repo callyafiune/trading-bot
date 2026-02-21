@@ -2,5 +2,6 @@
 .idea/
 data/
 runs/
+runs_ga*/
 **/__pycache__/
 *.egg-info/
