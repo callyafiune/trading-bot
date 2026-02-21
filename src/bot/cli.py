@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import itertools
 import json
+import os
+import shutil
 import time
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -17,6 +20,7 @@ from bot.backtest.engine import BacktestEngine
 from bot.backtest.metrics import compute_metrics
 from bot.backtest.reporting import print_summary
 from bot.execution.broker_binance import BrokerBinance
+from bot.ga.ga import GASettings, run_genetic_optimization
 from bot.features.builder import build_features
 from bot.market_structure import build_market_structure_stats, build_pivots_table
 from bot.market_data.binance_client import BinanceDataClient
@@ -32,7 +36,7 @@ from bot.market_data.loader import (
 )
 from bot.regime.detector import RegimeDetector
 from bot.runs.run_manager import RunManager
-from bot.runs.serializers import write_json
+from bot.runs.serializers import write_json, write_yaml
 from bot.utils.config import Settings, load_settings
 from bot.utils.logging import setup_logger
 
@@ -277,6 +281,28 @@ def _ensure_features(df: pd.DataFrame, cfg: Settings) -> pd.DataFrame:
     return build_features(df, cfg.features, market_structure_settings=cfg.market_structure)
 
 
+def _normalize_cache_path(path: str | None) -> str | None:
+    if not path:
+        return None
+    return str(Path(path).resolve())
+
+
+@lru_cache(maxsize=8)
+def _load_base_dataset_cached(
+    data_path: str,
+    funding_path: str | None,
+    fng_path: str | None,
+) -> pd.DataFrame:
+    df = load_parquet(data_path)
+    if funding_path:
+        funding_df = load_parquet(funding_path)
+        df = merge_ohlcv_with_funding(df, funding_df)
+    if fng_path:
+        fng_df = load_parquet(fng_path)
+        df = merge_fng_with_ohlcv(df, fng_df)
+    return df
+
+
 def _execute_backtest(
     data_path: str,
     cfg: Settings,
@@ -284,7 +310,7 @@ def _execute_backtest(
     detail_data_path: str | None = None,
     fng_path: str | None = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame, dict[str, Any], dict[str, Any], dict[str, Any], dict[str, Any] | None, pd.DataFrame | None]:
-    df = load_parquet(data_path)
+    resolved_fng: str | None = None
     if funding_path and not cfg.funding_filter.enabled:
         cfg.funding_filter.enabled = True
     if cfg.funding_filter.enabled and funding_path is None:
@@ -297,15 +323,14 @@ def _execute_backtest(
             print("[red]funding_filter.enabled=true requer --funding-path (ou arquivo derivado existente).[/red]")
             raise typer.Exit(code=2)
 
-    if funding_path:
-        funding_df = load_parquet(funding_path)
-        df = merge_ohlcv_with_funding(df, funding_df)
-
     if cfg.fng_filter.enabled:
         resolved_fng = fng_path or cfg.fng_filter.path
-        if resolved_fng:
-            fng_df = load_parquet(resolved_fng)
-            df = merge_fng_with_ohlcv(df, fng_df)
+
+    df = _load_base_dataset_cached(
+        _normalize_cache_path(data_path) or data_path,
+        _normalize_cache_path(funding_path),
+        _normalize_cache_path(resolved_fng),
+    ).copy(deep=True)
 
     if df.empty:
         print("[red]Dataset vazio. Verifique o arquivo de entrada.[/red]")
@@ -665,6 +690,206 @@ def grid(
             pivots=pivots,
         )
         print(f"[green]Grid run concluída:[/green] {ctx.run_dir}")
+
+
+@app.command("ga")
+def ga(
+    data_path: str = typer.Option(..., "--data-path"),
+    funding_path: str | None = typer.Option(None, "--funding-path"),
+    config: str = typer.Option("config/settings.yaml", "--config"),
+    outdir: str = typer.Option("runs_ga", "--outdir"),
+    population: int = typer.Option(64, "--population"),
+    elite: int = typer.Option(4, "--elite"),
+    tournament: int = typer.Option(5, "--tournament"),
+    cx_prob: float = typer.Option(0.35, "--cx-prob"),
+    mut_prob: float = typer.Option(0.65, "--mut-prob"),
+    seed: int = typer.Option(42, "--seed"),
+    n_jobs: int = typer.Option(0, "--n-jobs"),
+    eval_backend: str = typer.Option("inprocess", "--eval-backend"),
+    resume: bool = typer.Option(False, "--resume"),
+    fitness_objective: str = typer.Option("score", "--fitness-objective"),
+    max_generations: int | None = typer.Option(None, "--max-generations"),
+    max_evals_per_gen: int | None = typer.Option(None, "--max-evals-per-gen"),
+    print_every: int = typer.Option(1, "--print-every"),
+    save_best_every: int = typer.Option(1, "--save-best-every"),
+    save_full_artifacts: bool = typer.Option(False, "--save-full-artifacts/--no-save-full-artifacts"),
+    ga_space: str = typer.Option("config/ga_space.yaml", "--ga-space"),
+    min_trades: int = typer.Option(180, "--min-trades"),
+    min_trades_for_sharpe: int = typer.Option(80, "--min-trades-for-sharpe"),
+    lambda_trades: float = typer.Option(4.0, "--lambda-trades"),
+    w_ret: float = typer.Option(1.0, "--w-ret"),
+    w_dd: float = typer.Option(0.6, "--w-dd"),
+    w_sharpe: float = typer.Option(10.0, "--w-sharpe"),
+    mode: str | None = typer.Option(None, "--mode"),
+    atr_k: float | None = typer.Option(None, "--atr-k"),
+    breakout_N: int | None = typer.Option(None, "--breakout-N"),
+    adx_threshold: float | None = typer.Option(None, "--adx-threshold"),
+    use_ma200_filter: bool | None = typer.Option(None, "--use-ma200-filter/--no-use-ma200-filter"),
+    ml_threshold: float | None = typer.Option(None, "--ml-threshold"),
+    ms_enable: bool | None = typer.Option(None, "--ms-enable/--no-ms-enable"),
+    ms_left: int | None = typer.Option(None, "--ms-left"),
+    ms_right: int | None = typer.Option(None, "--ms-right"),
+    msb_enable: bool | None = typer.Option(None, "--msb-enable/--no-msb-enable"),
+    ms_gate_mode: str | None = typer.Option(None, "--ms-gate-mode"),
+    long_only: bool = typer.Option(False, "--long-only"),
+    short_only: bool = typer.Option(False, "--short-only"),
+):
+    data_path_value = (data_path or "").strip()
+    if not data_path_value:
+        raise typer.BadParameter("--data-path é obrigatório")
+    if "SEU_ARQUIVO" in data_path_value.upper():
+        raise typer.BadParameter(
+            "--data-path está com placeholder (SEU_ARQUIVO.parquet). "
+            "Informe o caminho real do parquet."
+        )
+    data_file = Path(data_path_value)
+    if not data_file.exists():
+        raise typer.BadParameter(f"--data-path não encontrado: {data_file}")
+    if funding_path:
+        funding_file = Path(funding_path)
+        if not funding_file.exists():
+            raise typer.BadParameter(f"--funding-path não encontrado: {funding_file}")
+
+    if population < 2:
+        raise typer.BadParameter("--population deve ser >= 2")
+    if elite < 1 or elite >= population:
+        raise typer.BadParameter("--elite deve ser >=1 e < population")
+    if not 0.0 <= cx_prob <= 1.0:
+        raise typer.BadParameter("--cx-prob deve estar em [0,1]")
+    if not 0.0 <= mut_prob <= 1.0:
+        raise typer.BadParameter("--mut-prob deve estar em [0,1]")
+    if n_jobs < 0:
+        raise typer.BadParameter("--n-jobs deve ser >= 0")
+    if min_trades < 1:
+        raise typer.BadParameter("--min-trades deve ser >= 1")
+    if min_trades_for_sharpe < 1:
+        raise typer.BadParameter("--min-trades-for-sharpe deve ser >= 1")
+    if lambda_trades < 0:
+        raise typer.BadParameter("--lambda-trades deve ser >= 0")
+    if w_ret < 0 or w_dd < 0 or w_sharpe < 0:
+        raise typer.BadParameter("--w-ret/--w-dd/--w-sharpe devem ser >= 0")
+    if eval_backend not in {"inprocess", "subprocess"}:
+        raise typer.BadParameter("--eval-backend deve ser inprocess|subprocess")
+    if long_only and short_only:
+        raise typer.BadParameter("Use apenas uma entre --long-only e --short-only")
+
+    cfg = load_settings(config)
+    if mode is not None:
+        cfg.strategy_breakout.mode = mode  # type: ignore[assignment]
+    if atr_k is not None:
+        cfg.strategy_breakout.atr_k = atr_k
+    if breakout_N is not None:
+        cfg.strategy_breakout.breakout_lookback_N = breakout_N
+    if adx_threshold is not None:
+        cfg.regime.adx_enter_threshold = adx_threshold
+        cfg.regime.adx_exit_threshold = max(10.0, adx_threshold - 4.0)
+        cfg.regime.adx_trend_threshold = adx_threshold
+    if use_ma200_filter is not None:
+        cfg.strategy_breakout.use_ma200_filter = use_ma200_filter
+    if ml_threshold is not None:
+        cfg.strategy_breakout.ml_prob_threshold = ml_threshold
+    if ms_enable is not None:
+        cfg.market_structure.enabled = ms_enable
+    if ms_left is not None:
+        cfg.market_structure.left_bars = ms_left
+    if ms_right is not None:
+        cfg.market_structure.right_bars = ms_right
+    if msb_enable is not None:
+        cfg.market_structure.msb.enabled = msb_enable
+    if ms_gate_mode is not None:
+        if ms_gate_mode not in {"msb_only", "structure_trend", "hybrid"}:
+            raise typer.BadParameter("--ms-gate-mode deve ser msb_only|structure_trend|hybrid")
+        cfg.market_structure.gate.mode = ms_gate_mode  # type: ignore[assignment]
+    if long_only:
+        cfg.strategy_breakout.trade_direction = "long"
+    if short_only:
+        cfg.strategy_breakout.trade_direction = "short"
+
+    outdir_path = Path(outdir)
+    outdir_path.mkdir(parents=True, exist_ok=True)
+    ga_base_cfg_path = outdir_path / "_ga_base_config.yaml"
+    write_yaml(ga_base_cfg_path, cfg.model_dump(mode="json"))
+
+    ga_space_path: str | None = ga_space
+    if ga_space and not Path(ga_space).exists():
+        print(f"[yellow]Aviso:[/yellow] ga-space nao encontrado em {ga_space}, usando autodiscovery.")
+        ga_space_path = None
+
+    resolved_n_jobs = n_jobs
+    if resolved_n_jobs == 0:
+        cpu_total = os.cpu_count() or 2
+        auto_cap = max_evals_per_gen if max_evals_per_gen is not None else population
+        # Keep automatic cap conservative on Windows, but allow true parallelism.
+        os_cap = 4 if os.name == "nt" else max(1, cpu_total - 1)
+        resolved_n_jobs = max(1, min(cpu_total - 1, auto_cap, os_cap))
+        print(
+            f"[cyan]GA:[/cyan] --n-jobs automatico -> {resolved_n_jobs} "
+            f"(cpu_count={cpu_total}, auto_cap={auto_cap}, os_cap={os_cap})"
+        )
+
+    ga_cfg = GASettings(
+        data_path=str(data_file),
+        funding_path=funding_path,
+        config_path=str(ga_base_cfg_path),
+        outdir=outdir,
+        population=population,
+        elite=elite,
+        tournament=tournament,
+        cx_prob=cx_prob,
+        mut_prob=mut_prob,
+        seed=seed,
+        n_jobs=resolved_n_jobs,
+        resume=resume,
+        fitness_objective=fitness_objective,
+        max_generations=max_generations,
+        max_evals_per_gen=max_evals_per_gen,
+        print_every=print_every,
+        save_best_every=save_best_every,
+        min_trades=min_trades,
+        min_trades_for_sharpe=min_trades_for_sharpe,
+        lambda_trades=lambda_trades,
+        w_ret=w_ret,
+        w_dd=w_dd,
+        w_sharpe=w_sharpe,
+        ga_space_path=ga_space_path,
+        eval_backend=eval_backend,
+        save_full_artifacts=save_full_artifacts,
+    )
+    try:
+        run_genetic_optimization(ga_cfg)
+    except KeyboardInterrupt:
+        print("\n[yellow]Ctrl+C detectado. Encerrando GA...[/yellow]")
+
+
+@app.command("ga-reset")
+def ga_reset(
+    outdir: str = typer.Option("runs_ga", "--outdir"),
+):
+    root = Path(outdir)
+    if not root.exists():
+        print(f"[yellow]Nada para limpar:[/yellow] {root}")
+        return
+
+    removed_dirs = 0
+    removed_files = 0
+    for child in root.iterdir():
+        if child.is_dir() and (child.name.startswith("gen_") or child.name == "checkpoints"):
+            shutil.rmtree(child, ignore_errors=True)
+            removed_dirs += 1
+            continue
+        if child.is_file() and child.name in {
+            "cache_index.json",
+            "hof.jsonl",
+            "best.yaml",
+            "_ga_base_config.yaml",
+        }:
+            child.unlink(missing_ok=True)
+            removed_files += 1
+
+    print(
+        f"[green]GA reset concluido[/green] outdir={root} "
+        f"removed_dirs={removed_dirs} removed_files={removed_files}"
+    )
 
 
 @app.command("paper")

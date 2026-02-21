@@ -144,6 +144,68 @@ Alias support:
 python -m bot grid --data-path ... --param strategy.atr_k=2.0,2.5,3.0 --param breakout.breakout_lookback_N=48,72,96
 ```
 
+## Genetic Optimization (GA)
+Hyperparameter optimization loop with continuous generations (until `Ctrl+C` by default), tournament selection, elitism, crossover/mutation, Hall of Fame, checkpoint and resume.
+
+Basic run:
+```bash
+python -m bot ga \
+  --data-path data/processed/BTCUSDT_1h_2023-01-01_2026-02-16.parquet \
+  --funding-path data/processed/funding_BTCUSDT_1h_2023-01-01_2026-02-16.parquet \
+  --config config/settings.yaml \
+  --outdir runs_ga \
+  --population 64 \
+  --elite 4 \
+  --tournament 5 \
+  --cx-prob 0.35 \
+  --mut-prob 0.65 \
+  --seed 42 \
+  --n-jobs 0 \
+  --eval-backend inprocess \
+  --fitness-objective score
+```
+
+Useful options:
+- `--resume`: compat flag (resume is now automatic when previous GA state exists)
+- `--max-generations N`: stop after N generations (if omitted, runs until `Ctrl+C`)
+- `--max-evals-per-gen N`: cap evaluations per generation
+- `--print-every N`: print generation status every N generations
+- `--save-best-every N`: write `runs_ga/best.yaml` every N generations
+- `--ga-space config/ga_space.yaml`: declarative search space (fallback to automatic discovery if missing)
+- `--eval-backend inprocess|subprocess`: `inprocess` is faster (default), `subprocess` keeps strict process isolation
+- `--min-trades 180`: hard minimum trade count; candidates below this are marked `invalid_low_trades` and receive very bad fitness
+- `--lambda-trades 4.0`: soft penalty strength for low trade count (`lambda * ((min_trades-trades)/min_trades)^2`)
+- `--min-trades-for-sharpe 80`: Sharpe term is ignored below this sample size
+- `--w-ret 1.0 --w-dd 0.6 --w-sharpe 10.0`: fitness weights
+
+Performance tips:
+- `--n-jobs 0` (default) picks automatically `cpu_count - 1`
+- On Windows, auto mode is capped conservatively (`os_cap=4`) but still parallel
+- Increase parallelism with `--n-jobs` (ex: number of physical CPU cores)
+- Keep `--eval-backend inprocess` for lower per-individual overhead
+- Use `--max-evals-per-gen` to cap generation time while testing
+- Use `--resume` + cache to avoid re-evaluating previously explored configs
+
+Runtime behavior:
+- `Ctrl+C` stops processing immediately, saves checkpoint/cache/HOF, and exits.
+- `python -m bot ga ...` auto-resumes from the latest local GA state (`checkpoints/ga_state.json` and/or highest `gen_<N>` directory).
+
+Reset GA state (restart from generation 0):
+```bash
+python -m bot ga-reset --outdir runs_ga
+```
+
+Notes for `total_trades=0`:
+- Base config can be too restrictive in shorter datasets.
+- GA now starts with seed individuals including a more permissive profile (`no ma200`, `no market_structure`, lower ADX threshold, shorter breakout window) to increase chance of early trades.
+
+Outputs:
+- `runs_ga/gen_<G>/ind_<I>_<hash>/...` individual run artifacts
+- `runs_ga/hof.jsonl` Hall of Fame (top global individuals)
+- `runs_ga/best.yaml` full config for best global individual
+- `runs_ga/checkpoints/ga_state.json` checkpoint/resume state
+- `runs_ga/cache_index.json` fitness cache by config hash
+
 ## Run paper trading
 ```bash
 python -m bot paper --data-path data/processed/BTCUSDT_1h_2023-01-01_2026-02-16.parquet
