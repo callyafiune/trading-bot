@@ -34,9 +34,10 @@ class EvalResult:
 def compute_fitness(
     summary: dict[str, Any],
     objective: str = "score",
-    min_trades: int = 180,
-    min_trades_for_sharpe: int = 80,
-    lambda_trades: float = 4.0,
+    min_trades_hard: int = 30,
+    target_trades: int = 140,
+    min_trades_for_sharpe: int = 120,
+    lambda_trades: float = 6.0,
     w_ret: float = 1.0,
     w_dd: float = 0.6,
     w_sharpe: float = 10.0,
@@ -89,7 +90,7 @@ def compute_fitness(
     trades = int(round(get_metric(["total_trades", "trades"], default=0.0)))
     switches = int(round(get_metric(["regime_switch_count_total", "switches_total"], default=0.0)))
 
-    deficit_ratio = max(0.0, (float(min_trades - trades) / max(1.0, float(min_trades))))
+    deficit_ratio = max(0.0, (float(target_trades - trades) / max(1.0, float(target_trades))))
     penalty_trades = lambda_trades * (deficit_ratio**2)
 
     ret_term = w_ret * (100.0 * float(ret))
@@ -98,8 +99,8 @@ def compute_fitness(
     if trades >= min_trades_for_sharpe and sharpe is not None:
         sharpe_term = w_sharpe * sharpe
 
-    hard_cut_applied = trades < min_trades
-    hard_cut_reason = "invalid_low_trades" if hard_cut_applied else ""
+    hard_cut_applied = trades < min_trades_hard
+    hard_cut_reason = "invalid_low_trades_hard" if hard_cut_applied else ""
     if hard_cut_applied:
         score = hard_cut_value
     else:
@@ -115,7 +116,8 @@ def compute_fitness(
         "dd_term": float(dd_term),
         "sharpe_term": float(sharpe_term),
         "penalty_trades": float(penalty_trades),
-        "min_trades": int(min_trades),
+        "min_trades_hard": int(min_trades_hard),
+        "target_trades": int(target_trades),
         "min_trades_for_sharpe": int(min_trades_for_sharpe),
         "lambda_trades": float(lambda_trades),
         "w_ret": float(w_ret),
@@ -123,12 +125,12 @@ def compute_fitness(
         "w_sharpe": float(w_sharpe),
         "hard_cut_applied": bool(hard_cut_applied),
         "hard_cut_reason": hard_cut_reason,
-        "invalid_low_trades": bool(hard_cut_applied),
+        "invalid_low_trades_hard": bool(hard_cut_applied),
         "fitness_total": float(score),
         "score": float(score),
     }
     if hard_cut_applied:
-        warnings.append("viability:invalid_low_trades")
+        warnings.append("viability:invalid_low_trades_hard")
     return float(score), components, warnings
 
 
@@ -205,7 +207,8 @@ def load_summary_with_fallback(run_dir: Path) -> tuple[dict[str, Any], str]:
 def _failure_payload(
     *,
     objective: str,
-    min_trades: int,
+    min_trades_hard: int,
+    target_trades: int,
     min_trades_for_sharpe: int,
     reason: str,
 ) -> dict[str, Any]:
@@ -213,7 +216,8 @@ def _failure_payload(
         "fitness": float("-inf"),
         "objective": objective,
         "fitness_components": {
-            "min_trades": int(min_trades),
+            "min_trades_hard": int(min_trades_hard),
+            "target_trades": int(target_trades),
             "min_trades_for_sharpe": int(min_trades_for_sharpe),
             "ret_term": 0.0,
             "dd_term": 0.0,
@@ -221,7 +225,7 @@ def _failure_payload(
             "penalty_trades": 0.0,
             "hard_cut_applied": True,
             "hard_cut_reason": "backtest_failed",
-            "invalid_low_trades": False,
+            "invalid_low_trades_hard": False,
             "fitness_total": float("-inf"),
             "score": float("-inf"),
         },
@@ -242,7 +246,8 @@ def evaluate_candidate(
     data_path: str,
     funding_path: str | None,
     objective: str,
-    min_trades: int,
+    min_trades_hard: int,
+    target_trades: int,
     min_trades_for_sharpe: int,
     lambda_trades: float,
     w_ret: float,
@@ -271,7 +276,8 @@ def evaluate_candidate(
         fitness, components, warnings = compute_fitness(
             summary,
             objective=objective,
-            min_trades=min_trades,
+            min_trades_hard=min_trades_hard,
+            target_trades=target_trades,
             min_trades_for_sharpe=min_trades_for_sharpe,
             lambda_trades=lambda_trades,
             w_ret=w_ret,
@@ -311,7 +317,8 @@ def evaluate_candidate(
             data_path=data_path,
             funding_path=funding_path,
             objective=objective,
-            min_trades=min_trades,
+            min_trades_hard=min_trades_hard,
+            target_trades=target_trades,
             min_trades_for_sharpe=min_trades_for_sharpe,
             lambda_trades=lambda_trades,
             w_ret=w_ret,
@@ -332,7 +339,8 @@ def evaluate_candidate(
         data_path=data_path,
         funding_path=funding_path,
         objective=objective,
-        min_trades=min_trades,
+        min_trades_hard=min_trades_hard,
+        target_trades=target_trades,
         min_trades_for_sharpe=min_trades_for_sharpe,
         lambda_trades=lambda_trades,
         w_ret=w_ret,
@@ -357,7 +365,8 @@ def _evaluate_candidate_subprocess(
     data_path: str,
     funding_path: str | None,
     objective: str,
-    min_trades: int,
+    min_trades_hard: int,
+    target_trades: int,
     min_trades_for_sharpe: int,
     lambda_trades: float,
     w_ret: float,
@@ -401,7 +410,8 @@ def _evaluate_candidate_subprocess(
     if completed.returncode != 0:
         payload = _failure_payload(
             objective=objective,
-            min_trades=min_trades,
+            min_trades_hard=min_trades_hard,
+            target_trades=target_trades,
             min_trades_for_sharpe=min_trades_for_sharpe,
             reason=f"backtest_failed:{completed.returncode}",
         )
@@ -421,7 +431,8 @@ def _evaluate_candidate_subprocess(
     if not summary:
         payload = _failure_payload(
             objective=objective,
-            min_trades=min_trades,
+            min_trades_hard=min_trades_hard,
+            target_trades=target_trades,
             min_trades_for_sharpe=min_trades_for_sharpe,
             reason="missing_metrics",
         )
@@ -440,7 +451,8 @@ def _evaluate_candidate_subprocess(
     fitness, components, warnings = compute_fitness(
         summary,
         objective=objective,
-        min_trades=min_trades,
+        min_trades_hard=min_trades_hard,
+        target_trades=target_trades,
         min_trades_for_sharpe=min_trades_for_sharpe,
         lambda_trades=lambda_trades,
         w_ret=w_ret,
@@ -480,7 +492,8 @@ def _evaluate_candidate_inprocess(
     data_path: str,
     funding_path: str | None,
     objective: str,
-    min_trades: int,
+    min_trades_hard: int,
+    target_trades: int,
     min_trades_for_sharpe: int,
     lambda_trades: float,
     w_ret: float,
@@ -549,7 +562,8 @@ def _evaluate_candidate_inprocess(
         )
         payload = _failure_payload(
             objective=objective,
-            min_trades=min_trades,
+            min_trades_hard=min_trades_hard,
+            target_trades=target_trades,
             min_trades_for_sharpe=min_trades_for_sharpe,
             reason=f"backtest_failed:{type(exc).__name__}",
         )
@@ -573,7 +587,8 @@ def _evaluate_candidate_inprocess(
     if not summary:
         payload = _failure_payload(
             objective=objective,
-            min_trades=min_trades,
+            min_trades_hard=min_trades_hard,
+            target_trades=target_trades,
             min_trades_for_sharpe=min_trades_for_sharpe,
             reason="missing_metrics",
         )
@@ -592,7 +607,8 @@ def _evaluate_candidate_inprocess(
     fitness, components, warnings = compute_fitness(
         summary,
         objective=objective,
-        min_trades=min_trades,
+        min_trades_hard=min_trades_hard,
+        target_trades=target_trades,
         min_trades_for_sharpe=min_trades_for_sharpe,
         lambda_trades=lambda_trades,
         w_ret=w_ret,

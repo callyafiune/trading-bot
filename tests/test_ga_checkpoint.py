@@ -22,7 +22,8 @@ def test_checkpoint_payload_shape(tmp_path: Path) -> None:
         max_evals_per_gen=None,
         print_every=1,
         save_best_every=1,
-        min_trades=12,
+        min_trades_hard=30,
+        target_trades=140,
         ga_space_path=None,
         eval_backend="inprocess",
     )

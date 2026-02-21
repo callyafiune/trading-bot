@@ -43,12 +43,15 @@ class GASettings:
     max_evals_per_gen: int | None
     print_every: int
     save_best_every: int
-    min_trades: int
-    min_trades_for_sharpe: int = 80
-    lambda_trades: float = 4.0
+    min_trades_hard: int = 30
+    target_trades: int = 140
+    min_trades_for_sharpe: int = 120
+    lambda_trades: float = 6.0
     w_ret: float = 1.0
     w_dd: float = 0.6
     w_sharpe: float = 10.0
+    init_baseline_ratio: float = 0.7
+    init_baseline_seed_mode: str = "baseline"
     ga_space_path: str | None = None
     eval_backend: str = "inprocess"
     save_full_artifacts: bool = False
@@ -118,6 +121,130 @@ def _mutate_individual(rng: random.Random, child: dict[str, Any], space: SearchS
     return space.normalize_genes(mutated)
 
 
+HARD_FILTER_KEYS = [
+    "funding_filter.enabled",
+    "market_structure.enabled",
+    "market_structure.gate.enabled",
+    "market_structure.msb.enabled",
+    "strategy_breakout.use_ma200_filter",
+    "strategy_breakout.use_rel_volume_filter",
+    "multi_timeframe.enabled",
+    "router.enabled",
+]
+
+
+def _hard_filter_bits(genes: dict[str, Any]) -> dict[str, int]:
+    return {
+        "funding": 1 if bool(genes.get("funding_filter.enabled", False)) else 0,
+        "ms": 1 if bool(genes.get("market_structure.enabled", False)) else 0,
+        "gate": 1 if bool(genes.get("market_structure.gate.enabled", False)) else 0,
+        "msb": 1 if bool(genes.get("market_structure.msb.enabled", False)) else 0,
+        "ma200": 1 if bool(genes.get("strategy_breakout.use_ma200_filter", False)) else 0,
+        "relvol": 1 if bool(genes.get("strategy_breakout.use_rel_volume_filter", False)) else 0,
+        "router": 1 if bool(genes.get("router.enabled", False)) else 0,
+        "mtf": 1 if bool(genes.get("multi_timeframe.enabled", False)) else 0,
+    }
+
+
+def _count_hard_filters(genes: dict[str, Any]) -> int:
+    return sum(_hard_filter_bits(genes).values())
+
+
+def _sanitize_individual(genes: dict[str, Any], space: SearchSpace, rng: random.Random) -> dict[str, Any]:
+    fixed = dict(space.normalize_genes(genes))
+
+    # 1) ADX ordering coherence: exit <= enter <= trend.
+    adx_keys = ("regime.adx_exit_threshold", "regime.adx_enter_threshold", "regime.adx_trend_threshold")
+    if all(k in fixed for k in adx_keys):
+        exit_v = float(fixed["regime.adx_exit_threshold"])
+        enter_v = float(fixed["regime.adx_enter_threshold"])
+        trend_v = float(fixed["regime.adx_trend_threshold"])
+        ordered = sorted([exit_v, enter_v, trend_v])
+        fixed["regime.adx_exit_threshold"] = ordered[0]
+        fixed["regime.adx_enter_threshold"] = ordered[1]
+        fixed["regime.adx_trend_threshold"] = ordered[2]
+
+    # 4) Clamp pivot windows.
+    if "market_structure.left_bars" in fixed:
+        fixed["market_structure.left_bars"] = max(2, min(8, int(fixed["market_structure.left_bars"])))
+    if "market_structure.right_bars" in fixed:
+        fixed["market_structure.right_bars"] = max(2, min(8, int(fixed["market_structure.right_bars"])))
+
+    # 3) Avoid restrictive hybrid gate setup.
+    if fixed.get("market_structure.gate.mode") == "hybrid":
+        if "market_structure.gate.hybrid_require_both" in fixed:
+            fixed["market_structure.gate.hybrid_require_both"] = False
+        if "market_structure.gate.block_in_neutral" in fixed:
+            fixed["market_structure.gate.block_in_neutral"] = False
+
+    # 5) Coherence when market_structure is disabled.
+    if not bool(fixed.get("market_structure.enabled", False)):
+        if "market_structure.gate.enabled" in fixed:
+            fixed["market_structure.gate.enabled"] = False
+        if "market_structure.msb.enabled" in fixed:
+            fixed["market_structure.msb.enabled"] = False
+
+    # 2) Limit active hard filters to at most 2.
+    active = [k for k in HARD_FILTER_KEYS if bool(fixed.get(k, False))]
+    if len(active) > 2:
+        preferred_group = [
+            "strategy_breakout.use_ma200_filter",
+            "funding_filter.enabled",
+            "market_structure.enabled",
+        ]
+        keep: set[str] = set()
+        preferred_active = [k for k in preferred_group if k in active]
+        if preferred_active:
+            keep.add(rng.choice(preferred_active))
+
+        others = [k for k in active if k not in keep]
+        rng.shuffle(others)
+        while len(keep) < 2 and others:
+            keep.add(others.pop(0))
+        for key in active:
+            fixed[key] = key in keep
+
+    if not bool(fixed.get("market_structure.enabled", False)):
+        if "market_structure.gate.enabled" in fixed:
+            fixed["market_structure.gate.enabled"] = False
+        if "market_structure.msb.enabled" in fixed:
+            fixed["market_structure.msb.enabled"] = False
+
+    return space.normalize_genes(fixed)
+
+
+def _make_seed_individual(base_genes: dict[str, Any], space: SearchSpace, rng: random.Random, mode: str = "baseline") -> dict[str, Any]:
+    genes = space.sample_individual(rng)
+    genes.update(base_genes)
+    if mode == "baseline":
+        overrides: dict[str, Any] = {
+            "funding_filter.enabled": False,
+            "market_structure.enabled": False,
+            "market_structure.gate.enabled": False,
+            "market_structure.msb.enabled": False,
+            "strategy_breakout.use_rel_volume_filter": False,
+            "router.enabled": False,
+        }
+        for key, value in overrides.items():
+            if key in space.specs:
+                genes[key] = value
+        if "strategy_breakout.use_ma200_filter" in space.specs:
+            genes["strategy_breakout.use_ma200_filter"] = bool(rng.random() < 0.2)
+        if "strategy_breakout.min_rel_volume" in space.specs:
+            genes["strategy_breakout.min_rel_volume"] = rng.uniform(1.0, 1.1)
+        if "regime.adx_enter_threshold" in space.specs:
+            genes["regime.adx_enter_threshold"] = rng.uniform(12.0, 20.0)
+        if "regime.adx_trend_threshold" in space.specs:
+            genes["regime.adx_trend_threshold"] = rng.uniform(18.0, 30.0)
+        if "regime.adx_exit_threshold" in space.specs:
+            genes["regime.adx_exit_threshold"] = rng.uniform(8.0, 16.0)
+        if "strategy_breakout.breakout_lookback_N" in space.specs:
+            genes["strategy_breakout.breakout_lookback_N"] = rng.randint(48, 160)
+        if "strategy_breakout.atr_k" in space.specs:
+            genes["strategy_breakout.atr_k"] = rng.uniform(1.8, 3.2)
+    return _sanitize_individual(genes, space, rng)
+
+
 def _save_checkpoint(path: Path, state: GAState, cache: dict[str, Any], cfg: GASettings) -> None:
     payload = {
         "generation": state.generation,
@@ -160,7 +287,8 @@ def _update_hof(hof: list[dict[str, Any]], results: list[EvalResult], limit: int
             "run_dir": res.run_dir,
             "generation": res.generation,
             "index": res.index,
-            "min_trades": fitness_components.get("min_trades"),
+            "min_trades_hard": fitness_components.get("min_trades_hard"),
+            "target_trades": fitness_components.get("target_trades"),
             "min_trades_for_sharpe": fitness_components.get("min_trades_for_sharpe"),
             "ret_term": fitness_components.get("ret_term"),
             "dd_term": fitness_components.get("dd_term"),
@@ -168,6 +296,8 @@ def _update_hof(hof: list[dict[str, Any]], results: list[EvalResult], limit: int
             "penalty_trades": fitness_components.get("penalty_trades"),
             "hard_cut_applied": fitness_components.get("hard_cut_applied"),
             "hard_cut_reason": fitness_components.get("hard_cut_reason"),
+            "hard_filters_on": _count_hard_filters(res.genes),
+            "filters": _hard_filter_bits(res.genes),
         }
         current = by_hash.get(res.genes_hash)
         if current is None or float(candidate["fitness"]) > float(current.get("fitness", float("-inf"))):
@@ -207,6 +337,13 @@ def _format_fitness_breakdown(metrics: dict[str, Any]) -> str:
     )
 
 
+def _format_filters(genes: dict[str, Any]) -> str:
+    bits = _hard_filter_bits(genes)
+    hard_on = sum(bits.values())
+    bits_str = ", ".join(f"{k}:{v}" for k, v in bits.items())
+    return f"hard_filters_on={hard_on} filters={{" + bits_str + "}"
+
+
 def _report_to_lines(report: dict[str, Any]) -> list[str]:
     line_sep = "[blue]" + "=" * 88 + "[/blue]"
     line_gen = (
@@ -218,9 +355,23 @@ def _report_to_lines(report: dict[str, Any]) -> list[str]:
     line_breakdown = f"[cyan]Fitness breakdown (gen)[/cyan] {str(report.get('best_breakdown', ''))}"
     line_global_metrics = f"[cyan]Best global metrics[/cyan] {str(report.get('best_global_metrics', ''))}"
     line_global_breakdown = f"[cyan]Fitness breakdown (global)[/cyan] {str(report.get('best_global_breakdown', ''))}"
+    line_filters_gen = f"[cyan]Filters (gen)[/cyan] {str(report.get('best_filters', ''))}"
+    line_filters_global = f"[cyan]Filters (global)[/cyan] {str(report.get('best_global_filters', ''))}"
     line_genes = f"[cyan]Best genes[/cyan] {json.dumps(report.get('best_genes', {}), ensure_ascii=False, sort_keys=True)}"
     line_run = f"[cyan]Best run[/cyan] {str(report.get('best_run', ''))}"
-    return [line_sep, line_gen, line_metrics, line_breakdown, line_global_metrics, line_global_breakdown, line_genes, line_run, line_sep]
+    return [
+        line_sep,
+        line_gen,
+        line_metrics,
+        line_breakdown,
+        line_filters_gen,
+        line_global_metrics,
+        line_global_breakdown,
+        line_filters_global,
+        line_genes,
+        line_run,
+        line_sep,
+    ]
 
 
 def _evaluate_task(payload: dict[str, Any]) -> EvalResult:
@@ -230,7 +381,8 @@ def _evaluate_task(payload: dict[str, Any]) -> EvalResult:
     data_path = payload.get("data_path", _WORKER_CTX.get("data_path"))
     funding_path = payload.get("funding_path", _WORKER_CTX.get("funding_path"))
     objective = payload.get("objective", _WORKER_CTX.get("objective"))
-    min_trades = payload.get("min_trades", _WORKER_CTX.get("min_trades"))
+    min_trades_hard = payload.get("min_trades_hard", _WORKER_CTX.get("min_trades_hard"))
+    target_trades = payload.get("target_trades", _WORKER_CTX.get("target_trades"))
     min_trades_for_sharpe = payload.get("min_trades_for_sharpe", _WORKER_CTX.get("min_trades_for_sharpe"))
     lambda_trades = payload.get("lambda_trades", _WORKER_CTX.get("lambda_trades"))
     w_ret = payload.get("w_ret", _WORKER_CTX.get("w_ret"))
@@ -248,7 +400,8 @@ def _evaluate_task(payload: dict[str, Any]) -> EvalResult:
         data_path=str(data_path),
         funding_path=funding_path,
         objective=str(objective),
-        min_trades=int(min_trades),
+        min_trades_hard=int(min_trades_hard),
+        target_trades=int(target_trades),
         min_trades_for_sharpe=int(min_trades_for_sharpe),
         lambda_trades=float(lambda_trades),
         w_ret=float(w_ret),
@@ -266,7 +419,8 @@ def _init_worker(
     data_path: str,
     funding_path: str | None,
     objective: str,
-    min_trades: int,
+    min_trades_hard: int,
+    target_trades: int,
     min_trades_for_sharpe: int,
     lambda_trades: float,
     w_ret: float,
@@ -284,7 +438,8 @@ def _init_worker(
             "data_path": data_path,
             "funding_path": funding_path,
             "objective": objective,
-            "min_trades": min_trades,
+            "min_trades_hard": min_trades_hard,
+            "target_trades": target_trades,
             "min_trades_for_sharpe": min_trades_for_sharpe,
             "lambda_trades": lambda_trades,
             "w_ret": w_ret,
@@ -307,7 +462,8 @@ def _evaluate_task_worker(task: dict[str, Any]) -> EvalResult:
         data_path=str(_WORKER_CTX["data_path"]),
         funding_path=_WORKER_CTX.get("funding_path"),
         objective=str(_WORKER_CTX["objective"]),
-        min_trades=int(_WORKER_CTX["min_trades"]),
+        min_trades_hard=int(_WORKER_CTX["min_trades_hard"]),
+        target_trades=int(_WORKER_CTX["target_trades"]),
         min_trades_for_sharpe=int(_WORKER_CTX["min_trades_for_sharpe"]),
         lambda_trades=float(_WORKER_CTX["lambda_trades"]),
         w_ret=float(_WORKER_CTX["w_ret"]),
@@ -372,6 +528,8 @@ def _evaluate_population(
     emit_progress()
 
     for index, genes in enumerate(population):
+        genes = _sanitize_individual(genes, space, rng=random.Random(generation * 100000 + index + 17))
+        population[index] = genes
         if index >= eval_limit:
             indexed_results[index] = EvalResult(
                 generation=generation,
@@ -428,7 +586,8 @@ def _evaluate_population(
             cfg.data_path,
             cfg.funding_path,
             cfg.fitness_objective,
-            cfg.min_trades,
+            cfg.min_trades_hard,
+            cfg.target_trades,
             cfg.min_trades_for_sharpe,
             cfg.lambda_trades,
             cfg.w_ret,
@@ -450,7 +609,8 @@ def _evaluate_population(
                     cfg.data_path,
                     cfg.funding_path,
                     cfg.fitness_objective,
-                    cfg.min_trades,
+                    cfg.min_trades_hard,
+                    cfg.target_trades,
                     cfg.min_trades_for_sharpe,
                     cfg.lambda_trades,
                     cfg.w_ret,
@@ -543,7 +703,7 @@ def _next_population(
             child = dict(p1)
 
         child = _mutate_individual(rng, child, space, mut_prob)
-        next_pop.append(space.normalize_genes(child))
+        next_pop.append(_sanitize_individual(child, space, rng))
 
     return next_pop[:population_size]
 
@@ -553,7 +713,7 @@ def _build_initial_population(space: SearchSpace, cfg: GASettings, rng: random.R
     seen: set[str] = set()
 
     def add_candidate(genes: dict[str, Any]) -> None:
-        normalized = space.normalize_genes(genes)
+        normalized = _sanitize_individual(genes, space, rng)
         ghash = genes_hash(normalized)
         if ghash in seen:
             return
@@ -561,29 +721,14 @@ def _build_initial_population(space: SearchSpace, cfg: GASettings, rng: random.R
         population.append(normalized)
 
     base = space.base_genes()
-    if base:
-        add_candidate(base)
-
-    warm = dict(base)
-    warm_updates: dict[str, Any] = {
-        "strategy_breakout.mode": "breakout",
-        "strategy_breakout.breakout_lookback_N": 24,
-        "strategy_breakout.use_ma200_filter": False,
-        "regime.adx_trend_threshold": 18,
-        "regime.adx_enter_threshold": 18,
-        "regime.adx_exit_threshold": 14,
-        "market_structure.enabled": False,
-        "funding_filter.enabled": False,
-        "strategy_breakout.trade_direction": "both",
-    }
-    for key, value in warm_updates.items():
-        if key in space.specs:
-            warm[key] = value
-    if warm:
-        add_candidate(warm)
+    baseline_target = int(round(cfg.population * max(0.0, min(1.0, cfg.init_baseline_ratio))))
+    attempts = 0
+    while len(population) < baseline_target and attempts < cfg.population * 20:
+        add_candidate(_make_seed_individual(base, space, rng, mode=cfg.init_baseline_seed_mode))
+        attempts += 1
 
     while len(population) < cfg.population:
-        add_candidate(space.sample_individual(rng))
+        add_candidate(_sanitize_individual(space.sample_individual(rng), space, rng))
     return population[: cfg.population]
 
 
@@ -602,7 +747,7 @@ def _build_zero_trade_escape_population(space: SearchSpace, cfg: GASettings, rng
     seen: set[str] = set()
 
     def add_candidate(genes: dict[str, Any]) -> None:
-        normalized = space.normalize_genes(genes)
+        normalized = _sanitize_individual(genes, space, rng)
         ghash = genes_hash(normalized)
         if ghash in seen:
             return
@@ -796,8 +941,10 @@ def run_genetic_optimization(cfg: GASettings) -> None:
                     "best_global": float(global_best.get("fitness", float("-inf"))),
                     "best_metrics": _format_best_metrics(best_gen.metrics),
                     "best_breakdown": _format_fitness_breakdown(best_gen.metrics),
+                    "best_filters": _format_filters(best_gen.genes),
                     "best_global_metrics": _format_best_metrics(global_metrics),
                     "best_global_breakdown": _format_fitness_breakdown(global_metrics),
+                    "best_global_filters": _format_filters(global_best.get("genes", {}) if isinstance(global_best, dict) else {}),
                     "best_genes": best_gen.genes,
                     "best_run": best_gen.run_dir,
                 }

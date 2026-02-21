@@ -173,10 +173,16 @@ Useful options:
 - `--save-best-every N`: write `runs_ga/best.yaml` every N generations
 - `--ga-space config/ga_space.yaml`: declarative search space (fallback to automatic discovery if missing)
 - `--eval-backend inprocess|subprocess`: `inprocess` is faster (default), `subprocess` keeps strict process isolation
-- `--min-trades 180`: hard minimum trade count; candidates below this are marked `invalid_low_trades` and receive very bad fitness
-- `--lambda-trades 4.0`: soft penalty strength for low trade count (`lambda * ((min_trades-trades)/min_trades)^2`)
-- `--min-trades-for-sharpe 80`: Sharpe term is ignored below this sample size
+- `--init-baseline-ratio 0.7`: 70% da população inicial nasce em perfil destravado para evitar geração 0 "morta"
+- `--min-trades-hard 30`: hard cut apenas para eliminar zero/near-zero trades (`invalid_low_trades_hard`)
+- `--target-trades 140`: alvo para penalidade contínua de baixa atividade
+- `--lambda-trades 6.0`: força da penalidade `lambda * max(0, (target_trades-trades)/target_trades)^2`
+- `--min-trades-for-sharpe 120`: Sharpe term é ignorado abaixo desse tamanho de amostra
 - `--w-ret 1.0 --w-dd 0.6 --w-sharpe 10.0`: fitness weights
+
+Motivação:
+- O GA/hyperopt tende a preferir combinações que quase não operam quando isso reduz drawdown e infla Sharpe em amostras pequenas.
+- O setup `min_trades_hard + target_trades` cria gradiente de melhoria sem travar toda a geração em `-10000`.
 
 Performance tips:
 - `--n-jobs 0` (default) picks automatically `cpu_count - 1`

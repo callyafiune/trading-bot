@@ -10,19 +10,6 @@ parameters:
     min: 0.8
     max: 3.0
 
-  frictions.fee_rate_per_side:
-    type: float
-    min: 0.0002
-    max: 0.0015
-  frictions.slippage_rate_per_side:
-    type: float
-    min: 0.0
-    max: 0.0008
-  frictions.borrow_interest_rate_per_hour:
-    type: float
-    min: 0.0
-    max: 0.00005
-
   funding_filter.enabled:
     type: bool
   funding_filter.z_window:
@@ -82,11 +69,11 @@ parameters:
   regime.adx_enter_threshold:
     type: float
     min: 12
-    max: 28
+    max: 24
   regime.adx_exit_threshold:
     type: float
     min: 8
-    max: 22
+    max: 20
   regime.adx_trend_threshold:
     type: float
     min: 18
@@ -115,18 +102,10 @@ parameters:
   risk.max_leverage:
     type: float
     min: 1.0
-    max: 5.0
+    max: 3.0
   risk.max_open_positions:
     type: choice
     choices: [1]
-  risk.daily_loss_limit_pct:
-    type: float
-    min: 0.01
-    max: 0.06
-  risk.weekly_loss_limit_pct:
-    type: float
-    min: 0.03
-    max: 0.2
 
   router.enabled:
     type: bool
@@ -145,7 +124,7 @@ parameters:
     choices: [both, long, short]
   strategy_breakout.breakout_lookback_N:
     type: int
-    min: 24
+    min: 48
     max: 240
   strategy_breakout.atr_k:
     type: float
@@ -157,7 +136,7 @@ parameters:
   strategy_breakout.min_rel_volume:
     type: float
     min: 1.0
-    max: 2.5
+    max: 1.4
   strategy_breakout.use_ma200_filter:
     type: bool
   strategy_breakout.ma200_period:

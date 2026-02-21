@@ -714,12 +714,15 @@ def ga(
     save_best_every: int = typer.Option(1, "--save-best-every"),
     save_full_artifacts: bool = typer.Option(False, "--save-full-artifacts/--no-save-full-artifacts"),
     ga_space: str = typer.Option("config/ga_space.yaml", "--ga-space"),
-    min_trades: int = typer.Option(180, "--min-trades"),
-    min_trades_for_sharpe: int = typer.Option(80, "--min-trades-for-sharpe"),
-    lambda_trades: float = typer.Option(4.0, "--lambda-trades"),
+    min_trades_hard: int = typer.Option(30, "--min-trades-hard"),
+    target_trades: int = typer.Option(140, "--target-trades"),
+    min_trades_for_sharpe: int = typer.Option(120, "--min-trades-for-sharpe"),
+    lambda_trades: float = typer.Option(6.0, "--lambda-trades"),
     w_ret: float = typer.Option(1.0, "--w-ret"),
     w_dd: float = typer.Option(0.6, "--w-dd"),
     w_sharpe: float = typer.Option(10.0, "--w-sharpe"),
+    init_baseline_ratio: float = typer.Option(0.7, "--init-baseline-ratio"),
+    init_baseline_seed_mode: str = typer.Option("baseline", "--init-baseline-seed-mode"),
     mode: str | None = typer.Option(None, "--mode"),
     atr_k: float | None = typer.Option(None, "--atr-k"),
     breakout_N: int | None = typer.Option(None, "--breakout-N"),
@@ -760,14 +763,18 @@ def ga(
         raise typer.BadParameter("--mut-prob deve estar em [0,1]")
     if n_jobs < 0:
         raise typer.BadParameter("--n-jobs deve ser >= 0")
-    if min_trades < 1:
-        raise typer.BadParameter("--min-trades deve ser >= 1")
+    if min_trades_hard < 1:
+        raise typer.BadParameter("--min-trades-hard deve ser >= 1")
+    if target_trades < 1:
+        raise typer.BadParameter("--target-trades deve ser >= 1")
     if min_trades_for_sharpe < 1:
         raise typer.BadParameter("--min-trades-for-sharpe deve ser >= 1")
     if lambda_trades < 0:
         raise typer.BadParameter("--lambda-trades deve ser >= 0")
     if w_ret < 0 or w_dd < 0 or w_sharpe < 0:
         raise typer.BadParameter("--w-ret/--w-dd/--w-sharpe devem ser >= 0")
+    if not 0.0 <= init_baseline_ratio <= 1.0:
+        raise typer.BadParameter("--init-baseline-ratio deve estar em [0,1]")
     if eval_backend not in {"inprocess", "subprocess"}:
         raise typer.BadParameter("--eval-backend deve ser inprocess|subprocess")
     if long_only and short_only:
@@ -845,12 +852,15 @@ def ga(
         max_evals_per_gen=max_evals_per_gen,
         print_every=print_every,
         save_best_every=save_best_every,
-        min_trades=min_trades,
+        min_trades_hard=min_trades_hard,
+        target_trades=target_trades,
         min_trades_for_sharpe=min_trades_for_sharpe,
         lambda_trades=lambda_trades,
         w_ret=w_ret,
         w_dd=w_dd,
         w_sharpe=w_sharpe,
+        init_baseline_ratio=init_baseline_ratio,
+        init_baseline_seed_mode=init_baseline_seed_mode,
         ga_space_path=ga_space_path,
         eval_backend=eval_backend,
         save_full_artifacts=save_full_artifacts,
