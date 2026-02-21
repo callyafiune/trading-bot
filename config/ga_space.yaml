@@ -1,0 +1,214 @@
+parameters:
+  adaptive_trailing.enabled:
+    type: bool
+  adaptive_trailing.activate_after_R:
+    type: float
+    min: 0.6
+    max: 2.5
+  adaptive_trailing.trailing_atr_multiplier:
+    type: float
+    min: 0.8
+    max: 3.0
+
+  frictions.fee_rate_per_side:
+    type: float
+    min: 0.0002
+    max: 0.0015
+  frictions.slippage_rate_per_side:
+    type: float
+    min: 0.0
+    max: 0.0008
+  frictions.borrow_interest_rate_per_hour:
+    type: float
+    min: 0.0
+    max: 0.00005
+
+  funding_filter.enabled:
+    type: bool
+  funding_filter.z_window:
+    type: choice
+    choices: [24, 48, 72, 96, 168, 336]
+  funding_filter.z_threshold:
+    type: float
+    min: 0.5
+    max: 3.0
+  funding_filter.block_long_if_z_gt:
+    type: float
+    min: 1.0
+    max: 4.0
+  funding_filter.block_short_if_z_lt:
+    type: float
+    min: -4.0
+    max: -1.0
+
+  market_structure.enabled:
+    type: bool
+  market_structure.gate.enabled:
+    type: bool
+  market_structure.gate.mode:
+    type: choice
+    choices: [msb_only, structure_trend, hybrid]
+  market_structure.gate.block_in_neutral:
+    type: bool
+  market_structure.gate.hybrid_require_both:
+    type: bool
+  market_structure.left_bars:
+    type: int
+    min: 2
+    max: 8
+  market_structure.right_bars:
+    type: int
+    min: 2
+    max: 8
+  market_structure.msb.enabled:
+    type: bool
+  market_structure.msb.min_break_atr:
+    type: float
+    min: 0.2
+    max: 1.2
+  market_structure.msb.persist_bars:
+    type: int
+    min: 1
+    max: 12
+
+  multi_timeframe.enabled:
+    type: bool
+  multi_timeframe.ma_period:
+    type: choice
+    choices: [100, 150, 200, 250, 300]
+  multi_timeframe.require_trend_alignment:
+    type: bool
+
+  regime.adx_enter_threshold:
+    type: float
+    min: 12
+    max: 28
+  regime.adx_exit_threshold:
+    type: float
+    min: 8
+    max: 22
+  regime.adx_trend_threshold:
+    type: float
+    min: 18
+    max: 35
+  regime.bb_width_range_threshold:
+    type: float
+    min: 0.02
+    max: 0.12
+  regime.chaos_vol_threshold:
+    type: float
+    min: 0.01
+    max: 0.06
+  regime.macro_confirm_bars:
+    type: int
+    min: 6
+    max: 72
+  regime.micro_confirm_bars:
+    type: int
+    min: 2
+    max: 24
+
+  risk.risk_per_trade:
+    type: float
+    min: 0.002
+    max: 0.02
+  risk.max_leverage:
+    type: float
+    min: 1.0
+    max: 5.0
+  risk.max_open_positions:
+    type: choice
+    choices: [1]
+  risk.daily_loss_limit_pct:
+    type: float
+    min: 0.01
+    max: 0.06
+  risk.weekly_loss_limit_pct:
+    type: float
+    min: 0.03
+    max: 0.2
+
+  router.enabled:
+    type: bool
+  router.range_mode:
+    type: choice
+    choices: [baseline]
+  router.trend_mode:
+    type: choice
+    choices: [ema, ema_macd, breakout]
+
+  strategy_breakout.mode:
+    type: choice
+    choices: [breakout]
+  strategy_breakout.trade_direction:
+    type: choice
+    choices: [both, long, short]
+  strategy_breakout.breakout_lookback_N:
+    type: int
+    min: 24
+    max: 240
+  strategy_breakout.atr_k:
+    type: float
+    min: 1.5
+    max: 4.0
+    sigma: 0.35
+  strategy_breakout.use_rel_volume_filter:
+    type: bool
+  strategy_breakout.min_rel_volume:
+    type: float
+    min: 1.0
+    max: 2.5
+  strategy_breakout.use_ma200_filter:
+    type: bool
+  strategy_breakout.ma200_period:
+    type: choice
+    choices: [150, 200, 250, 300]
+  strategy_breakout.ml_prob_threshold:
+    type: float
+    min: 0.5
+    max: 0.8
+    sigma: 0.05
+  strategy_breakout.retest.enabled:
+    type: bool
+  strategy_breakout.retest.window_bars:
+    type: int
+    min: 2
+    max: 24
+  strategy_breakout.retest.tolerance_atr:
+    type: float
+    min: 0.2
+    max: 1.5
+  strategy_breakout.retest.direct_size_multiplier:
+    type: float
+    min: 0.1
+    max: 1.0
+  strategy_breakout.retest.retest_size_multiplier:
+    type: float
+    min: 0.5
+    max: 2.0
+  strategy_breakout.time_stop_hours:
+    type: int
+    min: 6
+    max: 96
+
+  strategy_router.cooldown_bars_after_exit:
+    type: int
+    min: 0
+    max: 24
+  strategy_router.enable_chaos:
+    type: bool
+  strategy_router.enable_range:
+    type: bool
+  strategy_router.enable_trend_down_short:
+    type: bool
+  strategy_router.enable_trend_up_long:
+    type: bool
+  strategy_router.short_use_ma200_filter:
+    type: bool
+
+  time_exit.enabled:
+    type: bool
+  time_exit.max_holding_hours:
+    type: int
+    min: 6
+    max: 168

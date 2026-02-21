@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from datetime import datetime, timezone
 from typing import Any
 
@@ -24,7 +25,9 @@ def setup_logger(name: str = "bot") -> logging.Logger:
     logger = logging.getLogger(name)
     if logger.handlers:
         return logger
-    logger.setLevel(logging.INFO)
+    level_name = os.getenv("BOT_LOG_LEVEL", "INFO").upper()
+    level = getattr(logging, level_name, logging.INFO)
+    logger.setLevel(level)
     handler = logging.StreamHandler()
     handler.setFormatter(JsonFormatter())
     logger.addHandler(handler)
